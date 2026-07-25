@@ -24,7 +24,7 @@ export async function GET(request) {
     `&with_watch_providers=${encodeURIComponent(providers)}` +
     `&with_watch_monetization_types=flatrate` +
     `&with_genres=${encodeURIComponent(genres)}` +
-    `&vote_count.gte=30&page=${encodeURIComponent(page)}`;
+    `&vote_count.gte=30&vote_average.gte=6&page=${encodeURIComponent(page)}`;
 
   const res = await fetch(url);
   if (!res.ok) {

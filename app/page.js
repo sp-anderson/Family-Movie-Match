@@ -1,7 +1,7 @@
 "use client";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
-import { Heart, X, Users, Settings, Play, Sparkles, Film, LogOut, RefreshCw, Star, Ticket } from "lucide-react";
+import { Heart, X, Users, Settings, Play, Sparkles, Film, LogOut, RefreshCw, Star, Ticket, Eye, ChevronLeft, ChevronRight } from "lucide-react";
 
 const SERVICES = [
   { id: 8, name: "Netflix" },
@@ -30,7 +30,7 @@ const GENRES = [
   { id: 10751, name: "Family" },
 ];
 
-const AVATAR_COLORS = ["bg-amber-400", "bg-rose-400", "bg-emerald-400", "bg-sky-400", "bg-violet-400", "bg-orange-400"];
+const AVATAR_COLORS = ["bg-cinema-gold", "bg-cinema-orange", "bg-cinema-green", "bg-sky-400", "bg-violet-400", "bg-orange-400"];
 function avatarColor(key) {
   let h = 0;
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) % AVATAR_COLORS.length;
@@ -40,6 +40,20 @@ function genreNames(ids) {
   return (ids || []).map((id) => GENRES.find((g) => g.id === id)?.name).filter(Boolean).slice(0, 3);
 }
 
+function isNewRelease(dateStr) {
+  if (!dateStr) return false;
+  const days = (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24);
+  return days >= 0 && days <= 90;
+}
+
+function NewBadge() {
+  return (
+    <span className="absolute top-2 left-2 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-cinema-gold text-cinema-ink shadow">
+      NEW
+    </span>
+  );
+}
+
 function Chip({ active, onClick, children }) {
   return (
     <button
@@ -47,12 +61,61 @@ function Chip({ active, onClick, children }) {
       className={
         "px-3 py-1.5 rounded-full text-sm font-bold border-2 transition-colors " +
         (active
-          ? "bg-amber-400 border-amber-400 text-indigo-950"
-          : "bg-transparent border-indigo-700 text-indigo-200 hover:border-amber-400/60")
+          ? "bg-cinema-gold border-cinema-gold text-cinema-ink"
+          : "bg-transparent border-cinema-border text-cinema-mutedLight hover:border-cinema-gold/60")
       }
     >
       {children}
     </button>
+  );
+}
+
+function ProviderRow({ movieId, region }) {
+  const [providers, setProviders] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/providers?movieId=${movieId}&region=${region || "CA"}`)
+      .then((r) => r.json())
+      .then((d) => !cancelled && setProviders(d.providers || []))
+      .catch(() => !cancelled && setProviders([]));
+    return () => (cancelled = true);
+  }, [movieId, region]);
+
+  if (providers === null) return <div className="text-[11px] text-cinema-mutedDark mt-1">Checking where to watch…</div>;
+  if (providers.length === 0) return <div className="text-[11px] text-cinema-mutedDark mt-1">Not currently on any of your services.</div>;
+  return (
+    <div className="flex flex-wrap gap-1 mt-1">
+      {providers.map((p) => (
+        <span key={p.id} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-green/20 text-cinema-green font-bold">
+          {p.name}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function TrailerButton({ movieId }) {
+  const [key, setKey] = useState(undefined); // undefined = not fetched, null = none found
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/trailer?movieId=${movieId}`)
+      .then((r) => r.json())
+      .then((d) => !cancelled && setKey(d.key || null))
+      .catch(() => !cancelled && setKey(null));
+    return () => (cancelled = true);
+  }, [movieId]);
+
+  if (key === undefined) return null;
+  if (key === null) return null;
+  return (
+    <a
+      href={`https://www.youtube.com/watch?v=${key}`}
+      target="_blank"
+      rel="noreferrer"
+      className="mt-1 inline-flex items-center gap-1 text-xs font-bold text-cinema-orange hover:text-cinema-orangeLight"
+    >
+      <Play className="w-3.5 h-3.5" /> Watch trailer
+    </a>
   );
 }
 
@@ -61,7 +124,7 @@ export default function Home() {
   const bodyFont = { fontFamily: "'Karla', sans-serif" };
   const displayFont = { fontFamily: "'Bebas Neue', sans-serif", letterSpacing: "0.04em" };
 
-  const [profile, setProfile] = useState(null); // {group, services, genres, favorites}
+  const [profile, setProfile] = useState(null);
   const [members, setMembers] = useState([]);
   const [pool, setPool] = useState(null);
   const [votes, setVotes] = useState({});
@@ -69,7 +132,6 @@ export default function Home() {
   const [error, setError] = useState("");
   const [fetchingPool, setFetchingPool] = useState(false);
   const [trailers, setTrailers] = useState({});
-  const [swipeDir, setSwipeDir] = useState(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
 
   const [groupInput, setGroupInput] = useState("");
@@ -79,10 +141,15 @@ export default function Home() {
   const [favInput, setFavInput] = useState("");
   const [favorites, setFavorites] = useState([]);
 
+  const cardRef = useRef(null);
+  const draggingRef = useRef(false);
+  const startXRef = useRef(0);
+  const [dragX, setDragX] = useState(0);
+  const [animating, setAnimating] = useState(false);
+
   const email = session?.user?.email;
   const displayName = session?.user?.name || email;
 
-  // load this user's saved profile once signed in
   useEffect(() => {
     if (status !== "authenticated" || !email) return;
     (async () => {
@@ -137,10 +204,7 @@ export default function Home() {
   async function handleJoin() {
     setError("");
     const group = groupInput.trim().toUpperCase();
-    if (!group) {
-      setError("Enter a family group code.");
-      return;
-    }
+    if (!group) return setError("Enter a family group code.");
     const merged = await saveProfile({ group });
     await loadGroup(group);
     setScreen("setup");
@@ -149,7 +213,6 @@ export default function Home() {
   function randomCode() {
     setGroupInput(Math.random().toString(36).slice(2, 7).toUpperCase());
   }
-
   function toggleService(id) {
     setServicesInput((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   }
@@ -177,29 +240,51 @@ export default function Home() {
     setFetchingPool(true);
     setError("");
     try {
+      // re-fetch the latest shared pool first, so we merge onto whatever
+      // teammates have already added rather than clobbering it
+      const latest = await fetch(`/api/group?code=${encodeURIComponent(profile.group)}`).then((r) => r.json());
+      const existingMovies = (latest.pool && latest.pool.movies) || [];
+
       const allServiceIds = Array.from(new Set(members.flatMap((m) => m.services || []).concat(profile.services || [])));
       const allGenreIds = Array.from(new Set(members.flatMap((m) => m.genres || []).concat(profile.genres || [])));
-      let movies = [];
-      for (let page = 1; page <= 2; page++) {
+      let fetched = [];
+      for (let page = 1; page <= 5; page++) {
         const url = `/api/movies?region=${profile.region || "CA"}&providers=${allServiceIds.join("|")}&genres=${allGenreIds.join("|")}&page=${page}`;
         const res = await fetch(url);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "TMDB request failed");
-        movies = movies.concat(data.results || []);
+        fetched = fetched.concat(data.results || []);
+        if (!data.results || data.results.length === 0) break;
       }
-      const seen = new Set();
-      movies = movies.filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)));
-      for (let i = movies.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [movies[i], movies[j]] = [movies[j], movies[i]];
+
+      // seed additional picks from everyone's favorite movies
+      const allFavorites = Array.from(new Set(members.flatMap((m) => m.favorites || []).concat(profile.favorites || [])));
+      if (allFavorites.length) {
+        try {
+          const recRes = await fetch(`/api/recommendations?titles=${encodeURIComponent(allFavorites.join("|"))}&region=${profile.region || "CA"}`);
+          const recData = await recRes.json();
+          fetched = fetched.concat(recData.results || []);
+        } catch {
+          // recommendations are a bonus — don't block the whole fetch if this fails
+        }
       }
-      const newPool = { region: profile.region, providerIds: allServiceIds, genreIds: allGenreIds, movies: movies.slice(0, 40), fetchedAt: Date.now() };
+
+      // merge: keep every movie anyone has ever seen in this group's pool
+      // (so votes/matches on them stay valid) and add anything new
+      const byId = new Map(existingMovies.map((m) => [m.id, m]));
+      for (const m of fetched) if (!byId.has(m.id)) byId.set(m.id, m);
+      const merged = Array.from(byId.values());
+
+      const newPool = { region: profile.region, providerIds: allServiceIds, genreIds: allGenreIds, movies: merged, fetchedAt: Date.now() };
       await fetch("/api/group", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: profile.group, type: "pool", payload: newPool }),
       });
       setPool(newPool);
+      if (fetched.length === 0 && existingMovies.length === 0) {
+        setError("TMDB didn't return any titles for this combination of services and genres — try adding more of either in Settings.");
+      }
     } catch (e) {
       setError(e.message || "Couldn't fetch movies.");
     }
@@ -218,8 +303,6 @@ export default function Home() {
   const currentMovie = deck[0];
 
   async function castVote(movieId, choice) {
-    setSwipeDir(choice);
-    setTimeout(() => setSwipeDir(null), 250);
     const res = await fetch("/api/group", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -228,6 +311,51 @@ export default function Home() {
     const data = await res.json();
     setVotes(data.votes || {});
   }
+
+  function commitSwipe(choice) {
+    if (!currentMovie || animating) return;
+    setAnimating(true);
+    setDragX(choice === "yes" ? 500 : -500);
+    setTimeout(() => {
+      castVote(currentMovie.id, choice);
+      setDragX(0);
+      setAnimating(false);
+    }, 200);
+  }
+
+  function markSeen() {
+    if (!currentMovie || animating) return;
+    castVote(currentMovie.id, "seen");
+  }
+
+  function onPointerDown(e) {
+    if (animating) return;
+    draggingRef.current = true;
+    startXRef.current = e.clientX;
+  }
+  useEffect(() => {
+    function onMove(e) {
+      if (!draggingRef.current) return;
+      setDragX(e.clientX - startXRef.current);
+    }
+    function onUp() {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      setDragX((x) => {
+        if (x > 100) commitSwipe("yes");
+        else if (x < -100) commitSwipe("no");
+        else return 0;
+        return x;
+      });
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    // eslint-disable-next-line
+  }, [currentMovie?.id, animating]);
 
   async function fetchTrailer(movieId) {
     if (trailers[movieId]) return;
@@ -240,77 +368,79 @@ export default function Home() {
     // eslint-disable-next-line
   }, [currentMovie?.id]);
 
-  const matches = useMemo(() => {
+  const votesFor = (m) => members.map((mem) => (votes[m.id] || {})[mem.email]);
+
+  const readyToWatch = useMemo(() => {
     if (!pool || !members.length) return [];
-    return pool.movies.filter((m) => members.every((mem) => (votes[m.id] || {})[mem.email] === "yes"));
+    return pool.movies.filter((m) => votesFor(m).every((v) => v === "yes"));
+    // eslint-disable-next-line
   }, [pool, votes, members]);
 
-  // ---- render ----
+  const alreadySeen = useMemo(() => {
+    if (!pool || !members.length) return [];
+    return pool.movies.filter((m) => {
+      const vs = votesFor(m);
+      return vs.every((v) => v === "yes" || v === "seen") && vs.some((v) => v === "seen");
+    });
+    // eslint-disable-next-line
+  }, [pool, votes, members]);
+
+  const myWatched = useMemo(() => {
+    if (!pool || !email) return [];
+    return pool.movies.filter((m) => (votes[m.id] || {})[email] === "seen");
+  }, [pool, votes, email]);
+
   if (status === "loading") {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-indigo-950 text-amber-400" style={bodyFont}>
-        Loading…
-      </div>
-    );
+    return <div className="min-h-screen flex items-center justify-center bg-cinema-bg text-cinema-gold" style={bodyFont}>Loading…</div>;
   }
 
   if (status !== "authenticated") {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-indigo-950 text-stone-50" style={bodyFont}>
+      <div className="min-h-screen flex items-center justify-center bg-cinema-bg text-stone-50" style={bodyFont}>
         <div className="text-center">
           <div className="flex items-center justify-center gap-2 mb-4">
-            <Film className="w-8 h-8 text-amber-400" />
-            <span className="text-3xl text-amber-400" style={displayFont}>Family Movie Match</span>
+            <Film className="w-8 h-8 text-cinema-gold" />
+            <span className="text-3xl text-cinema-gold" style={displayFont}>Family Movie Match</span>
           </div>
-          <p className="text-indigo-300 mb-6 max-w-xs mx-auto text-sm">
-            Sign in with Google to link up with your family and start swiping.
-          </p>
-          <button
-            onClick={() => signIn("google")}
-            className="px-6 py-2.5 rounded-lg bg-amber-400 text-indigo-950 font-extrabold hover:bg-amber-300"
-          >
-            Sign in with Google
-          </button>
+          <p className="text-cinema-muted mb-6 max-w-xs mx-auto text-sm">Sign in with Google to link up with your family and start swiping.</p>
+          <button onClick={() => signIn("google")} className="px-6 py-2.5 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight">Sign in with Google</button>
         </div>
       </div>
     );
   }
 
   if (loadingProfile) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-indigo-950 text-amber-400" style={bodyFont}>
-        Loading your profile…
-      </div>
-    );
+    return <div className="min-h-screen flex items-center justify-center bg-cinema-bg text-cinema-gold" style={bodyFont}>Loading your profile…</div>;
   }
 
+  const rotation = Math.max(-15, Math.min(15, dragX / 12));
+
   return (
-    <div className="min-h-screen bg-indigo-950 text-stone-50" style={bodyFont}>
-      <div className="px-5 pt-5 pb-3 flex items-center justify-between border-b border-indigo-800/60">
+    <div className="min-h-screen bg-cinema-bg text-stone-50" style={bodyFont}>
+      <div className="px-5 pt-5 pb-3 flex items-center justify-between border-b border-cinema-border/60">
         <div className="flex items-center gap-2">
-          <Film className="w-6 h-6 text-amber-400" />
-          <span className="text-2xl text-amber-400" style={displayFont}>Family Movie Match</span>
+          <Film className="w-6 h-6 text-cinema-gold" />
+          <span className="text-2xl text-cinema-gold" style={displayFont}>Family Movie Match</span>
         </div>
         <div className="flex items-center gap-3">
-          {profile?.group && <span className="text-xs text-indigo-300 font-bold hidden sm:inline">Group {profile.group}</span>}
-          <button onClick={() => signOut()} className="text-indigo-300 hover:text-amber-400" title="Sign out">
-            <LogOut className="w-4 h-4" />
-          </button>
+          {profile?.group && <span className="text-xs text-cinema-muted font-bold hidden sm:inline">Group {profile.group}</span>}
+          <button onClick={() => signOut()} className="text-cinema-muted hover:text-cinema-gold" title="Sign out"><LogOut className="w-4 h-4" /></button>
         </div>
       </div>
 
-      {profile?.group && screen !== "setup" && screen !== "join" && (
-        <div className="flex gap-1 px-5 pt-3">
+      {profile?.group && screen !== "join" && (
+        <div className="flex gap-1 px-5 pt-3 overflow-x-auto">
           {[
             { id: "swipe", label: "Swipe", icon: Heart },
-            { id: "matches", label: `Matches (${matches.length})`, icon: Sparkles },
+            { id: "matches", label: `Matches (${readyToWatch.length + alreadySeen.length})`, icon: Sparkles },
+            { id: "seen", label: `Seen (${myWatched.length})`, icon: Eye },
             { id: "group", label: "Group", icon: Users },
             { id: "setup", label: "Settings", icon: Settings },
           ].map((t) => (
             <button
               key={t.id}
               onClick={() => setScreen(t.id)}
-              className={"flex items-center gap-1.5 px-3 py-2 rounded-t-lg text-sm font-bold " + (screen === t.id ? "bg-indigo-900 text-amber-400" : "text-indigo-300 hover:text-stone-50")}
+              className={"flex items-center gap-1.5 px-3 py-2 rounded-t-lg text-sm font-bold whitespace-nowrap " + (screen === t.id ? "bg-cinema-panel text-cinema-gold" : "text-cinema-muted hover:text-cinema-mutedLight")}
             >
               <t.icon className="w-4 h-4" /> {t.label}
             </button>
@@ -319,54 +449,48 @@ export default function Home() {
       )}
 
       <div className="p-5 max-w-2xl mx-auto">
-        {error && <div className="mb-4 px-4 py-2 rounded-lg bg-rose-950 border border-rose-700 text-rose-200 text-sm">{error}</div>}
+        {error && <div className="mb-4 px-4 py-2 rounded-lg bg-cinema-orange/15 border border-cinema-orange text-cinema-orangeLight text-sm">{error}</div>}
 
         {screen === "join" && (
           <div className="max-w-sm mx-auto py-8">
-            <p className="text-indigo-300 mb-6 text-sm">Signed in as {displayName}. Create a family group, or join one with a shared code.</p>
-            <label className="text-xs font-bold text-indigo-300 uppercase tracking-wide">Family group code</label>
+            <p className="text-cinema-muted mb-6 text-sm">Signed in as {displayName}. Create a family group, or join one with a shared code.</p>
+            <label className="text-xs font-bold text-cinema-muted uppercase tracking-wide">Family group code</label>
             <div className="flex gap-2 mt-1 mb-2">
-              <input value={groupInput} onChange={(e) => setGroupInput(e.target.value.toUpperCase())} placeholder="e.g. THOMPSONS" className="flex-1 px-3 py-2 rounded-lg bg-indigo-900 border border-indigo-700 text-stone-50 outline-none focus:border-amber-400" />
-              <button onClick={randomCode} className="px-3 py-2 rounded-lg bg-indigo-800 text-indigo-200 text-xs font-bold hover:bg-indigo-700">New</button>
+              <input value={groupInput} onChange={(e) => setGroupInput(e.target.value.toUpperCase())} placeholder="e.g. THOMPSONS" className="flex-1 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold" />
+              <button onClick={randomCode} className="px-3 py-2 rounded-lg bg-cinema-panel text-cinema-mutedLight text-xs font-bold hover:bg-cinema-border">New</button>
             </div>
-            <p className="text-xs text-indigo-400 mb-5">Share this exact code with whoever you want to match with.</p>
-            <button onClick={handleJoin} className="w-full py-2.5 rounded-lg bg-amber-400 text-indigo-950 font-extrabold hover:bg-amber-300">Join family group</button>
+            <p className="text-xs text-cinema-mutedDark mb-5">Share this exact code with whoever you want to match with.</p>
+            <button onClick={handleJoin} className="w-full py-2.5 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight">Join family group</button>
           </div>
         )}
 
         {screen === "setup" && profile?.group && (
           <div className="max-w-lg mx-auto pb-6">
-            <h2 className="text-xl text-amber-400 mb-4" style={displayFont}>Your streaming setup</h2>
+            <h2 className="text-xl text-cinema-gold mb-4" style={displayFont}>Your streaming setup</h2>
             <div className="mb-5">
-              <div className="text-xs font-bold text-indigo-300 uppercase tracking-wide mb-2">Region</div>
+              <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Region</div>
               <div className="flex gap-2">
                 <Chip active={regionInput === "CA"} onClick={() => setRegionInput("CA")}>Canada</Chip>
                 <Chip active={regionInput === "US"} onClick={() => setRegionInput("US")}>United States</Chip>
               </div>
             </div>
             <div className="mb-5">
-              <div className="text-xs font-bold text-indigo-300 uppercase tracking-wide mb-2">Services you're subscribed to</div>
-              <div className="flex flex-wrap gap-2">
-                {SERVICES.map((s) => <Chip key={s.id} active={servicesInput.includes(s.id)} onClick={() => toggleService(s.id)}>{s.name}</Chip>)}
-              </div>
+              <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Services you're subscribed to</div>
+              <div className="flex flex-wrap gap-2">{SERVICES.map((s) => <Chip key={s.id} active={servicesInput.includes(s.id)} onClick={() => toggleService(s.id)}>{s.name}</Chip>)}</div>
             </div>
             <div className="mb-5">
-              <div className="text-xs font-bold text-indigo-300 uppercase tracking-wide mb-2">Genres you like</div>
-              <div className="flex flex-wrap gap-2">
-                {GENRES.map((g) => <Chip key={g.id} active={genresInput.includes(g.id)} onClick={() => toggleGenre(g.id)}>{g.name}</Chip>)}
-              </div>
+              <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Genres you like</div>
+              <div className="flex flex-wrap gap-2">{GENRES.map((g) => <Chip key={g.id} active={genresInput.includes(g.id)} onClick={() => toggleGenre(g.id)}>{g.name}</Chip>)}</div>
             </div>
             <div className="mb-6">
-              <div className="text-xs font-bold text-indigo-300 uppercase tracking-wide mb-2">All-time favorite movies (optional)</div>
+              <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">All-time favorite movies (optional)</div>
               <div className="flex gap-2 mb-2">
-                <input value={favInput} onChange={(e) => setFavInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addFavorite()} placeholder="Add a title…" className="flex-1 px-3 py-2 rounded-lg bg-indigo-900 border border-indigo-700 text-stone-50 outline-none focus:border-amber-400" />
-                <button onClick={addFavorite} className="px-3 py-2 rounded-lg bg-indigo-800 text-indigo-200 text-xs font-bold">Add</button>
+                <input value={favInput} onChange={(e) => setFavInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addFavorite()} placeholder="Add a title…" className="flex-1 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold" />
+                <button onClick={addFavorite} className="px-3 py-2 rounded-lg bg-cinema-panel text-cinema-mutedLight text-xs font-bold">Add</button>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {favorites.map((f, i) => <span key={i} className="px-3 py-1 rounded-full bg-indigo-800 text-xs text-stone-100 flex items-center gap-1"><Star className="w-3 h-3 text-amber-400" /> {f}</span>)}
-              </div>
+              <div className="flex flex-wrap gap-2">{favorites.map((f, i) => <span key={i} className="px-3 py-1 rounded-full bg-cinema-panel text-xs text-cinema-mutedLight flex items-center gap-1"><Star className="w-3 h-3 text-cinema-gold" /> {f}</span>)}</div>
             </div>
-            <button onClick={handleSaveSetup} className="w-full py-2.5 rounded-lg bg-amber-400 text-indigo-950 font-extrabold hover:bg-amber-300">Save & start swiping</button>
+            <button onClick={handleSaveSetup} className="w-full py-2.5 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight">Save settings</button>
           </div>
         )}
 
@@ -374,44 +498,74 @@ export default function Home() {
           <div className="max-w-sm mx-auto">
             {!pool && (
               <div className="text-center py-10">
-                <p className="text-indigo-300 mb-4 text-sm">No movie list yet for this group. Pull one in based on everyone's services and genres.</p>
-                <button onClick={fetchPool} disabled={fetchingPool} className="px-5 py-2.5 rounded-lg bg-amber-400 text-indigo-950 font-extrabold hover:bg-amber-300 disabled:opacity-50 inline-flex items-center gap-2">
+                <p className="text-cinema-muted mb-4 text-sm">No movie list yet for this group. Pull one in based on everyone's services and genres.</p>
+                <button onClick={fetchPool} disabled={fetchingPool} className="px-5 py-2.5 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight disabled:opacity-50 inline-flex items-center gap-2">
                   <RefreshCw className={"w-4 h-4 " + (fetchingPool ? "animate-spin" : "")} /> {fetchingPool ? "Fetching…" : "Find movies for us"}
                 </button>
               </div>
             )}
             {pool && currentMovie && (
               <div>
-                <div className="text-center text-xs text-indigo-400 mb-2 font-bold">{deck.length} left in your stack</div>
-                <div className={"rounded-2xl bg-stone-50 text-indigo-950 overflow-hidden shadow-xl transition-all duration-200 " + (swipeDir === "yes" ? "translate-x-8 rotate-3 opacity-60" : swipeDir === "no" ? "-translate-x-8 -rotate-3 opacity-60" : "")}>
-                  {currentMovie.poster_path ? (
-                    <img src={`https://image.tmdb.org/t/p/w500${currentMovie.poster_path}`} alt={currentMovie.title} className="w-full h-72 object-cover" />
-                  ) : (
-                    <div className="w-full h-72 bg-indigo-200 flex items-center justify-center text-indigo-500">No poster</div>
-                  )}
+                <div className="text-center text-xs text-cinema-mutedDark mb-2 font-bold">{deck.length} left in your stack</div>
+                <div
+                  ref={cardRef}
+                  onPointerDown={onPointerDown}
+                  style={{
+                    transform: `translateX(${dragX}px) rotate(${rotation}deg)`,
+                    transition: draggingRef.current ? "none" : "transform 0.2s ease",
+                    touchAction: "pan-y",
+                  }}
+                  className="rounded-2xl bg-cinema-card text-cinema-ink overflow-hidden shadow-xl cursor-grab active:cursor-grabbing select-none"
+                >
+                  <div className="relative w-full aspect-[2/3] bg-stone-200">
+                    {isNewRelease(currentMovie.release_date) && <NewBadge />}
+                    {currentMovie.poster_path ? (
+                      <img src={`https://image.tmdb.org/t/p/w500${currentMovie.poster_path}`} alt={currentMovie.title} className="w-full h-full object-cover pointer-events-none" draggable={false} />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-cinema-mutedDark">No poster</div>
+                    )}
+                    <button
+                      onClick={() => commitSwipe("no")}
+                      className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/40 hover:bg-cinema-orange/80 text-white flex items-center justify-center backdrop-blur-sm"
+                      aria-label="No"
+                    >
+                      <ChevronLeft className="w-6 h-6" />
+                    </button>
+                    <button
+                      onClick={() => commitSwipe("yes")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/40 hover:bg-cinema-green/80 text-white flex items-center justify-center backdrop-blur-sm"
+                      aria-label="Yes"
+                    >
+                      <ChevronRight className="w-6 h-6" />
+                    </button>
+                  </div>
                   <div className="p-4">
                     <div className="font-extrabold text-lg leading-snug">{currentMovie.title}</div>
-                    <div className="flex flex-wrap gap-1 mt-1 mb-2">
-                      {genreNames(currentMovie.genre_ids).map((g) => <span key={g} className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold">{g}</span>)}
-                    </div>
-                    <p className="text-sm text-indigo-800 leading-snug line-clamp-4">{currentMovie.overview}</p>
+                    {currentMovie._because && (
+                      <div className="text-xs text-cinema-orange font-bold mb-1">Because you liked {currentMovie._because}</div>
+                    )}
+                    <div className="flex flex-wrap gap-1 mt-1 mb-2">{genreNames(currentMovie.genre_ids).map((g) => <span key={g} className="text-[11px] px-2 py-0.5 rounded-full bg-cinema-ink/10 text-cinema-ink font-bold">{g}</span>)}</div>
+                    <p className="text-sm text-cinema-ink leading-snug">{currentMovie.overview}</p>
                     {trailers[currentMovie.id] && (
-                      <a href={`https://www.youtube.com/watch?v=${trailers[currentMovie.id]}`} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-sm font-bold text-rose-600 hover:text-rose-700">
+                      <a href={`https://www.youtube.com/watch?v=${trailers[currentMovie.id]}`} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-sm font-bold text-cinema-orange hover:text-cinema-orangeLight">
                         <Play className="w-4 h-4" /> Watch trailer
                       </a>
                     )}
                   </div>
                 </div>
-                <div className="flex justify-center gap-6 mt-5">
-                  <button onClick={() => castVote(currentMovie.id, "no")} className="w-14 h-14 rounded-full bg-indigo-900 border-2 border-rose-500 text-rose-500 flex items-center justify-center hover:bg-rose-950"><X className="w-6 h-6" /></button>
-                  <button onClick={() => castVote(currentMovie.id, "yes")} className="w-14 h-14 rounded-full bg-indigo-900 border-2 border-emerald-500 text-emerald-500 flex items-center justify-center hover:bg-emerald-950"><Heart className="w-6 h-6" /></button>
+                <div className="flex items-center justify-center gap-4 mt-3 text-xs text-cinema-mutedDark">
+                  <span>← swipe or tap for no</span>
+                  <button onClick={markSeen} className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-cinema-panel border border-cinema-border text-cinema-mutedLight font-bold hover:border-cinema-gold">
+                    <Eye className="w-3.5 h-3.5" /> Already seen it
+                  </button>
+                  <span>swipe or tap for yes →</span>
                 </div>
               </div>
             )}
             {pool && !currentMovie && (
               <div className="text-center py-10">
-                <p className="text-indigo-300 mb-4 text-sm">You've swiped through the whole stack. Check Matches, or pull a fresh batch.</p>
-                <button onClick={fetchPool} disabled={fetchingPool} className="px-5 py-2.5 rounded-lg bg-indigo-800 text-stone-50 font-bold hover:bg-indigo-700 inline-flex items-center gap-2">
+                <p className="text-cinema-muted mb-4 text-sm">You've swiped through the whole stack. Check Matches, or pull a fresh batch.</p>
+                <button onClick={fetchPool} disabled={fetchingPool} className="px-5 py-2.5 rounded-lg bg-cinema-panel text-stone-50 font-bold hover:bg-cinema-border inline-flex items-center gap-2">
                   <RefreshCw className={"w-4 h-4 " + (fetchingPool ? "animate-spin" : "")} /> Get a new batch
                 </button>
               </div>
@@ -421,39 +575,92 @@ export default function Home() {
 
         {screen === "matches" && (
           <div className="max-w-lg mx-auto">
-            <div className="rounded-xl border-2 border-amber-400 bg-indigo-900 p-4 mb-5">
-              <div className="flex justify-center gap-2 mb-2">{Array.from({ length: 10 }).map((_, i) => <span key={i} className="w-1.5 h-1.5 rounded-full bg-amber-400" />)}</div>
-              <div className="text-center text-2xl text-amber-400" style={displayFont}>Match Marquee</div>
-              <div className="flex justify-center gap-2 mt-2">{Array.from({ length: 10 }).map((_, i) => <span key={i} className="w-1.5 h-1.5 rounded-full bg-amber-400" />)}</div>
+            <div className="rounded-xl border-2 border-cinema-gold bg-cinema-panel p-4 mb-5">
+              <div className="flex justify-center gap-2 mb-2">{Array.from({ length: 10 }).map((_, i) => <span key={i} className="w-1.5 h-1.5 rounded-full bg-cinema-gold" />)}</div>
+              <div className="text-center text-2xl text-cinema-gold" style={displayFont}>Match Marquee</div>
+              <div className="flex justify-center gap-2 mt-2">{Array.from({ length: 10 }).map((_, i) => <span key={i} className="w-1.5 h-1.5 rounded-full bg-cinema-gold" />)}</div>
             </div>
-            {matches.length === 0 && <p className="text-indigo-300 text-sm text-center py-6">No unanimous picks yet — keep swiping.</p>}
-            <div className="space-y-3">
-              {matches.map((m) => (
-                <div key={m.id} className="flex gap-3 bg-indigo-900 rounded-xl p-3 border border-indigo-700">
-                  {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
-                  <div className="min-w-0">
-                    <div className="font-extrabold flex items-center gap-1"><Ticket className="w-4 h-4 text-amber-400 flex-shrink-0" /> {m.title}</div>
-                    <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-700 text-indigo-100 font-bold">{g}</span>)}</div>
-                    <p className="text-xs text-indigo-300 line-clamp-2">{m.overview}</p>
-                  </div>
+
+            {readyToWatch.length === 0 && alreadySeen.length === 0 && (
+              <p className="text-cinema-muted text-sm text-center py-6">No unanimous picks yet — keep swiping.</p>
+            )}
+
+            {readyToWatch.length > 0 && (
+              <>
+                <div className="text-xs font-bold text-cinema-gold uppercase tracking-wide mb-2">New to watch together</div>
+                <div className="space-y-3 mb-6">
+                  {readyToWatch.map((m) => (
+                    <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
+                      {m.poster_path && (
+                        <div className="relative flex-shrink-0">
+                          {isNewRelease(m.release_date) && <NewBadge />}
+                          <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg" alt={m.title} />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className="font-extrabold flex items-center gap-1"><Ticket className="w-4 h-4 text-cinema-gold flex-shrink-0" /> {m.title}</div>
+                        {m._because && <div className="text-[11px] text-cinema-orange font-bold">Because you liked {m._because}</div>}
+                        <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
+                        <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
+                        <ProviderRow movieId={m.id} region={profile?.region} />
+                        <TrailerButton movieId={m.id} />
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            )}
+
+            {alreadySeen.length > 0 && (
+              <>
+                <div className="text-xs font-bold text-cinema-mutedDark uppercase tracking-wide mb-2">Already seen by someone</div>
+                <div className="space-y-3 opacity-80">
+                  {alreadySeen.map((m) => (
+                    <div key={m.id} className="flex gap-3 bg-cinema-panel/60 rounded-xl p-3 border border-cinema-border">
+                      {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
+                      <div className="min-w-0">
+                        <div className="font-extrabold flex items-center gap-1"><Ticket className="w-4 h-4 text-cinema-mutedDark flex-shrink-0" /> {m.title}</div>
+                        <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
+                        <p className="text-xs text-cinema-mutedDark line-clamp-2">{m.overview}</p>
+                        <ProviderRow movieId={m.id} region={profile?.region} />
+                        <TrailerButton movieId={m.id} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {screen === "seen" && (
+          <div className="max-w-lg mx-auto space-y-3">
+            <p className="text-xs text-cinema-mutedDark mb-2">Movies you've marked as already seen.</p>
+            {myWatched.length === 0 && <p className="text-cinema-muted text-sm text-center py-6">Nothing here yet.</p>}
+            {myWatched.map((m) => (
+              <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
+                {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
+                <div className="min-w-0">
+                  <div className="font-extrabold">{m.title}</div>
+                  <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
         {screen === "group" && (
           <div className="max-w-lg mx-auto space-y-3">
-            <p className="text-xs text-indigo-400 mb-2">Share code <span className="text-amber-400 font-bold">{profile?.group}</span> with anyone else who should join.</p>
+            <p className="text-xs text-cinema-mutedDark mb-2">Share code <span className="text-cinema-gold font-bold">{profile?.group}</span> with anyone else who should join.</p>
             {members.map((m) => (
-              <div key={m.email} className="bg-indigo-900 rounded-xl p-3 border border-indigo-700">
+              <div key={m.email} className="bg-cinema-panel rounded-xl p-3 border border-cinema-border">
                 <div className="flex items-center gap-2 mb-2">
-                  <div className={`w-8 h-8 rounded-full ${avatarColor(m.email)} flex items-center justify-center text-indigo-950 font-extrabold text-sm`}>{m.name?.[0]?.toUpperCase()}</div>
+                  <div className={`w-8 h-8 rounded-full ${avatarColor(m.email)} flex items-center justify-center text-cinema-ink font-extrabold text-sm`}>{m.name?.[0]?.toUpperCase()}</div>
                   <span className="font-extrabold">{m.name}</span>
                 </div>
-                <div className="flex flex-wrap gap-1 mb-1">{(m.services || []).map((sid) => <span key={sid} className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-700 text-indigo-100 font-bold">{SERVICES.find((s) => s.id === sid)?.name}</span>)}</div>
-                <div className="flex flex-wrap gap-1 mb-1">{(m.genres || []).map((gid) => <span key={gid} className="text-[10px] px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 font-bold">{GENRES.find((g) => g.id === gid)?.name}</span>)}</div>
-                {m.favorites?.length > 0 && <div className="text-xs text-indigo-300 mt-1">Favorites: {m.favorites.join(", ")}</div>}
+                <div className="flex flex-wrap gap-1 mb-1">{(m.services || []).map((sid) => <span key={sid} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{SERVICES.find((s) => s.id === sid)?.name}</span>)}</div>
+                <div className="flex flex-wrap gap-1 mb-1">{(m.genres || []).map((gid) => <span key={gid} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-gold/20 text-cinema-gold font-bold">{GENRES.find((g) => g.id === gid)?.name}</span>)}</div>
+                {m.favorites?.length > 0 && <div className="text-xs text-cinema-muted mt-1">Favorites: {m.favorites.join(", ")}</div>}
               </div>
             ))}
           </div>
