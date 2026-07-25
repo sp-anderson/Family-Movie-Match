@@ -136,6 +136,8 @@ export default function Home() {
 
   const [groupInput, setGroupInput] = useState("");
   const [regionInput, setRegionInput] = useState("CA");
+  const [roleInput, setRoleInput] = useState("parent");
+  const [matchWith, setMatchWith] = useState(null); // null = everyone in the family
   const [servicesInput, setServicesInput] = useState([]);
   const [genresInput, setGenresInput] = useState([]);
   const [favInput, setFavInput] = useState("");
@@ -159,6 +161,7 @@ export default function Home() {
       if (data.profile) {
         setProfile(data.profile);
         setRegionInput(data.profile.region || "CA");
+        setRoleInput(data.profile.role || "parent");
         setServicesInput(data.profile.services || []);
         setGenresInput(data.profile.genres || []);
         setFavorites(data.profile.favorites || []);
@@ -230,8 +233,8 @@ export default function Home() {
     setError("");
     if (!servicesInput.length) return setError("Pick at least one streaming service.");
     if (!genresInput.length) return setError("Pick at least one genre you're into.");
-    const merged = await saveProfile({ region: regionInput, services: servicesInput, genres: genresInput, favorites });
-    await saveMember(merged.group, { name: displayName, email, services: servicesInput, genres: genresInput, favorites });
+    const merged = await saveProfile({ region: regionInput, role: roleInput, services: servicesInput, genres: genresInput, favorites });
+    await saveMember(merged.group, { name: displayName, email, role: roleInput, services: servicesInput, genres: genresInput, favorites });
     setScreen("swipe");
   }
 
@@ -332,30 +335,26 @@ export default function Home() {
     if (animating) return;
     draggingRef.current = true;
     startXRef.current = e.clientX;
+    e.currentTarget.setPointerCapture(e.pointerId);
   }
-  useEffect(() => {
-    function onMove(e) {
-      if (!draggingRef.current) return;
-      setDragX(e.clientX - startXRef.current);
-    }
-    function onUp() {
-      if (!draggingRef.current) return;
-      draggingRef.current = false;
-      setDragX((x) => {
-        if (x > 100) commitSwipe("yes");
-        else if (x < -100) commitSwipe("no");
-        else return 0;
-        return x;
-      });
-    }
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-    // eslint-disable-next-line
-  }, [currentMovie?.id, animating]);
+  function onPointerMove(e) {
+    if (!draggingRef.current) return;
+    e.preventDefault();
+    setDragX(e.clientX - startXRef.current);
+  }
+  function onPointerEnd(e) {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {}
+    setDragX((x) => {
+      if (x > 100) commitSwipe("yes");
+      else if (x < -100) commitSwipe("no");
+      else return 0;
+      return x;
+    });
+  }
 
   async function fetchTrailer(movieId) {
     if (trailers[movieId]) return;
@@ -368,22 +367,31 @@ export default function Home() {
     // eslint-disable-next-line
   }, [currentMovie?.id]);
 
-  const votesFor = (m) => members.map((mem) => (votes[m.id] || {})[mem.email]);
+  const otherMembers = members.filter((m) => m.email !== email);
+  const consideredEmails = matchWith === null ? otherMembers.map((m) => m.email) : matchWith;
+  const consideredMembers = [{ email }, ...otherMembers.filter((m) => consideredEmails.includes(m.email))];
+
+  function toggleMatchWith(otherEmail) {
+    const base = matchWith === null ? otherMembers.map((m) => m.email) : matchWith;
+    setMatchWith(base.includes(otherEmail) ? base.filter((e) => e !== otherEmail) : [...base, otherEmail]);
+  }
+
+  const votesFor = (m) => consideredMembers.map((mem) => (votes[m.id] || {})[mem.email]);
 
   const readyToWatch = useMemo(() => {
-    if (!pool || !members.length) return [];
+    if (!pool || !consideredMembers.length) return [];
     return pool.movies.filter((m) => votesFor(m).every((v) => v === "yes"));
     // eslint-disable-next-line
-  }, [pool, votes, members]);
+  }, [pool, votes, members, matchWith, email]);
 
   const alreadySeen = useMemo(() => {
-    if (!pool || !members.length) return [];
+    if (!pool || !consideredMembers.length) return [];
     return pool.movies.filter((m) => {
       const vs = votesFor(m);
       return vs.every((v) => v === "yes" || v === "seen") && vs.some((v) => v === "seen");
     });
     // eslint-disable-next-line
-  }, [pool, votes, members]);
+  }, [pool, votes, members, matchWith, email]);
 
   const myWatched = useMemo(() => {
     if (!pool || !email) return [];
@@ -423,7 +431,7 @@ export default function Home() {
           <span className="text-2xl text-cinema-gold" style={displayFont}>Family Movie Match</span>
         </div>
         <div className="flex items-center gap-3">
-          {profile?.group && <span className="text-xs text-cinema-muted font-bold hidden sm:inline">Group {profile.group}</span>}
+          {profile?.group && <span className="text-xs text-cinema-muted font-bold hidden sm:inline">Family {profile.group}</span>}
           <button onClick={() => signOut()} className="text-cinema-muted hover:text-cinema-gold" title="Sign out"><LogOut className="w-4 h-4" /></button>
         </div>
       </div>
@@ -434,7 +442,7 @@ export default function Home() {
             { id: "swipe", label: "Swipe", icon: Heart },
             { id: "matches", label: `Matches (${readyToWatch.length + alreadySeen.length})`, icon: Sparkles },
             { id: "seen", label: `Seen (${myWatched.length})`, icon: Eye },
-            { id: "group", label: "Group", icon: Users },
+            { id: "group", label: "Family", icon: Users },
             { id: "setup", label: "Settings", icon: Settings },
           ].map((t) => (
             <button
@@ -467,6 +475,13 @@ export default function Home() {
         {screen === "setup" && profile?.group && (
           <div className="max-w-lg mx-auto pb-6">
             <h2 className="text-xl text-cinema-gold mb-4" style={displayFont}>Your streaming setup</h2>
+            <div className="mb-5">
+              <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Your role in this family</div>
+              <div className="flex gap-2">
+                <Chip active={roleInput === "parent"} onClick={() => setRoleInput("parent")}>Parent</Chip>
+                <Chip active={roleInput === "child"} onClick={() => setRoleInput("child")}>Child</Chip>
+              </div>
+            </div>
             <div className="mb-5">
               <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Region</div>
               <div className="flex gap-2">
@@ -510,10 +525,13 @@ export default function Home() {
                 <div
                   ref={cardRef}
                   onPointerDown={onPointerDown}
+                  onPointerMove={onPointerMove}
+                  onPointerUp={onPointerEnd}
+                  onPointerCancel={onPointerEnd}
                   style={{
                     transform: `translateX(${dragX}px) rotate(${rotation}deg)`,
                     transition: draggingRef.current ? "none" : "transform 0.2s ease",
-                    touchAction: "pan-y",
+                    touchAction: "none",
                   }}
                   className="rounded-2xl bg-cinema-card text-cinema-ink overflow-hidden shadow-xl cursor-grab active:cursor-grabbing select-none"
                 >
@@ -558,6 +576,12 @@ export default function Home() {
                     >
                       <Heart className="w-5 h-5" />
                     </button>
+                    <button
+                      onClick={markSeen}
+                      className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 px-3 py-1.5 rounded-full bg-black/40 hover:bg-black/60 text-white text-xs font-bold backdrop-blur-sm"
+                    >
+                      <Eye className="w-3.5 h-3.5" /> Already seen it
+                    </button>
                   </div>
                   <div className="p-4">
                     <div className="font-extrabold text-lg leading-snug">{currentMovie.title}</div>
@@ -575,9 +599,6 @@ export default function Home() {
                 </div>
                 <div className="flex items-center justify-center gap-4 mt-3 text-xs text-cinema-mutedDark">
                   <span>← swipe or tap for no</span>
-                  <button onClick={markSeen} className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-cinema-panel border border-cinema-border text-cinema-mutedLight font-bold hover:border-cinema-gold">
-                    <Eye className="w-3.5 h-3.5" /> Already seen it
-                  </button>
                   <span>swipe or tap for yes →</span>
                 </div>
               </div>
@@ -601,8 +622,21 @@ export default function Home() {
               <div className="flex justify-center gap-2 mt-2">{Array.from({ length: 10 }).map((_, i) => <span key={i} className="w-1.5 h-1.5 rounded-full bg-cinema-gold" />)}</div>
             </div>
 
+            {otherMembers.length > 0 && (
+              <div className="mb-5">
+                <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Matching with</div>
+                <div className="flex flex-wrap gap-2">
+                  {otherMembers.map((m) => (
+                    <Chip key={m.email} active={consideredEmails.includes(m.email)} onClick={() => toggleMatchWith(m.email)}>
+                      {m.name}
+                    </Chip>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {readyToWatch.length === 0 && alreadySeen.length === 0 && (
-              <p className="text-cinema-muted text-sm text-center py-6">No unanimous picks yet — keep swiping.</p>
+              <p className="text-cinema-muted text-sm text-center py-6">No shared picks yet with this group — keep swiping.</p>
             )}
 
             {readyToWatch.length > 0 && (
@@ -677,6 +711,11 @@ export default function Home() {
                 <div className="flex items-center gap-2 mb-2">
                   <div className={`w-8 h-8 rounded-full ${avatarColor(m.email)} flex items-center justify-center text-cinema-ink font-extrabold text-sm`}>{m.name?.[0]?.toUpperCase()}</div>
                   <span className="font-extrabold">{m.name}</span>
+                  {m.role && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold uppercase">
+                      {m.role}
+                    </span>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-1 mb-1">{(m.services || []).map((sid) => <span key={sid} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{SERVICES.find((s) => s.id === sid)?.name}</span>)}</div>
                 <div className="flex flex-wrap gap-1 mb-1">{(m.genres || []).map((gid) => <span key={gid} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-gold/20 text-cinema-gold font-bold">{GENRES.find((g) => g.id === gid)?.name}</span>)}</div>
