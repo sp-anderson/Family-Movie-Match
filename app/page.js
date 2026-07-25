@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
-import { Heart, X, Users, Settings, Play, Sparkles, Film, LogOut, RefreshCw, Star, Ticket, Eye, ChevronLeft, ChevronRight } from "lucide-react";
+import { Heart, X, Users, Settings, Play, Sparkles, Film, LogOut, RefreshCw, Star, Ticket, Eye } from "lucide-react";
 
 const SERVICES = [
   { id: 8, name: "Netflix" },
@@ -524,19 +524,39 @@ export default function Home() {
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-cinema-mutedDark">No poster</div>
                     )}
+                    {dragX < 0 && (
+                      <div
+                        className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                        style={{ opacity: Math.min(1, Math.abs(dragX) / 100) }}
+                      >
+                        <div className="w-24 h-24 rounded-full bg-cinema-orange/90 flex items-center justify-center shadow-lg -rotate-12">
+                          <X className="w-14 h-14 text-white" strokeWidth={3} />
+                        </div>
+                      </div>
+                    )}
+                    {dragX > 0 && (
+                      <div
+                        className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                        style={{ opacity: Math.min(1, Math.abs(dragX) / 100) }}
+                      >
+                        <div className="w-24 h-24 rounded-full bg-cinema-green/90 flex items-center justify-center shadow-lg rotate-12">
+                          <Heart className="w-14 h-14 text-white" fill="white" />
+                        </div>
+                      </div>
+                    )}
                     <button
                       onClick={() => commitSwipe("no")}
                       className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/40 hover:bg-cinema-orange/80 text-white flex items-center justify-center backdrop-blur-sm"
                       aria-label="No"
                     >
-                      <ChevronLeft className="w-6 h-6" />
+                      <X className="w-5 h-5" />
                     </button>
                     <button
                       onClick={() => commitSwipe("yes")}
                       className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/40 hover:bg-cinema-green/80 text-white flex items-center justify-center backdrop-blur-sm"
                       aria-label="Yes"
                     >
-                      <ChevronRight className="w-6 h-6" />
+                      <Heart className="w-5 h-5" />
                     </button>
                   </div>
                   <div className="p-4">
