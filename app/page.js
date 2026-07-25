@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
-import { Heart, X, Users, Settings, Play, Sparkles, Film, LogOut, RefreshCw, Star, Ticket, Eye } from "lucide-react";
+import { Heart, X, Users, Settings, Play, Sparkles, Film, LogOut, RefreshCw, Star, Ticket, Eye, Clock, Compass } from "lucide-react";
 
 const SERVICES = [
   { id: 8, name: "Netflix" },
@@ -94,6 +94,29 @@ function ProviderRow({ movieId, region }) {
   );
 }
 
+function SpotlightControl({ movieId, spotlight, myEmail, onToggle }) {
+  const recommenders = spotlight.filter((s) => s.movieId === movieId);
+  const mine = recommenders.some((s) => s.byEmail === myEmail);
+  return (
+    <div className="mt-1">
+      {recommenders.length > 0 && (
+        <div className="text-[11px] text-cinema-gold font-bold mb-1">
+          📢 Recommended by {recommenders.map((r) => r.byName).join(", ")}
+        </div>
+      )}
+      <button
+        onClick={() => onToggle(movieId)}
+        className={
+          "text-[11px] font-bold px-2 py-0.5 rounded-full border " +
+          (mine ? "bg-cinema-gold text-cinema-ink border-cinema-gold" : "bg-transparent text-cinema-muted border-cinema-border hover:border-cinema-gold")
+        }
+      >
+        {mine ? "✓ Recommended to family" : "Recommend to family"}
+      </button>
+    </div>
+  );
+}
+
 function TrailerButton({ movieId }) {
   const [key, setKey] = useState(undefined); // undefined = not fetched, null = none found
   useEffect(() => {
@@ -128,6 +151,7 @@ export default function Home() {
   const [members, setMembers] = useState([]);
   const [pool, setPool] = useState(null);
   const [votes, setVotes] = useState({});
+  const [spotlight, setSpotlight] = useState([]);
   const [screen, setScreen] = useState("join");
   const [error, setError] = useState("");
   const [fetchingPool, setFetchingPool] = useState(false);
@@ -181,6 +205,7 @@ export default function Home() {
     setMembers(data.members || []);
     setPool(data.pool || null);
     setVotes(data.votes || {});
+    setSpotlight(data.spotlight || []);
   }, []);
 
   async function saveProfile(next) {
@@ -334,6 +359,21 @@ export default function Home() {
     setVotes(data.votes || {});
   }
 
+  function isSpotlightedByMe(movieId) {
+    return spotlight.some((s) => s.movieId === movieId && s.byEmail === email);
+  }
+
+  async function toggleSpotlight(movieId) {
+    const action = isSpotlightedByMe(movieId) ? "remove" : "add";
+    const res = await fetch("/api/group", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: profile.group, type: "spotlight", payload: { movieId, byEmail: email, byName: displayName, action } }),
+    });
+    const data = await res.json();
+    setSpotlight(data.spotlight || []);
+  }
+
   function commitSwipe(choice) {
     if (!currentMovie || animating) return;
     setAnimating(true);
@@ -417,6 +457,25 @@ export default function Home() {
     return pool.movies.filter((m) => (votes[m.id] || {})[email] === "seen");
   }, [pool, votes, email]);
 
+  const myYes = useMemo(() => {
+    if (!pool || !email) return [];
+    return pool.movies.filter((m) => (votes[m.id] || {})[email] === "yes");
+  }, [pool, votes, email]);
+
+  const myNo = useMemo(() => {
+    if (!pool || !email) return [];
+    return pool.movies.filter((m) => (votes[m.id] || {})[email] === "no");
+  }, [pool, votes, email]);
+
+  const familyYesByMember = useMemo(() => {
+    if (!pool) return [];
+    return otherMembers.map((m) => ({
+      member: m,
+      movies: pool.movies.filter((mv) => (votes[mv.id] || {})[m.email] === "yes"),
+    }));
+    // eslint-disable-next-line
+  }, [pool, votes, members]);
+
   if (status === "loading") {
     return <div className="min-h-screen flex items-center justify-center bg-cinema-bg text-cinema-gold" style={bodyFont}>Loading…</div>;
   }
@@ -461,6 +520,8 @@ export default function Home() {
             { id: "swipe", label: "Swipe", icon: Heart },
             { id: "matches", label: `Matches (${readyToWatch.length + alreadySeen.length})`, icon: Sparkles },
             { id: "seen", label: `Seen (${myWatched.length})`, icon: Eye },
+            { id: "history", label: "My Votes", icon: Clock },
+            { id: "family-picks", label: "Family Picks", icon: Compass },
             { id: "group", label: "Family", icon: Users },
             { id: "setup", label: "Settings", icon: Settings },
           ].map((t) => (
@@ -614,6 +675,7 @@ export default function Home() {
                         <Play className="w-4 h-4" /> Watch trailer
                       </a>
                     )}
+                    <SpotlightControl movieId={currentMovie.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                   </div>
                 </div>
                 <div className="flex items-center justify-center gap-4 mt-3 text-xs text-cinema-mutedDark">
@@ -716,6 +778,115 @@ export default function Home() {
                 <div className="min-w-0">
                   <div className="font-extrabold">{m.title}</div>
                   <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {screen === "history" && (
+          <div className="max-w-lg mx-auto">
+            <p className="text-xs text-cinema-mutedDark mb-4">Everything you've swiped on. Change your mind any time.</p>
+
+            <div className="text-xs font-bold text-cinema-gold uppercase tracking-wide mb-2">You said yes ({myYes.length})</div>
+            <div className="space-y-3 mb-6">
+              {myYes.length === 0 && <p className="text-cinema-muted text-sm py-2">Nothing yet.</p>}
+              {myYes.map((m) => (
+                <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
+                  {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
+                  <div className="min-w-0 flex-1">
+                    <div className="font-extrabold">{m.title}</div>
+                    <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
+                    <TrailerButton movieId={m.id} />
+                    <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
+                    <div className="flex gap-1 mt-2">
+                      <button onClick={() => castVote(m.id, "no")} className="text-[11px] font-bold px-2 py-0.5 rounded-full border border-cinema-border text-cinema-muted hover:border-cinema-orange hover:text-cinema-orange">Change to no</button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="text-xs font-bold text-cinema-mutedDark uppercase tracking-wide mb-2">You said no ({myNo.length})</div>
+            <div className="space-y-3">
+              {myNo.length === 0 && <p className="text-cinema-muted text-sm py-2">Nothing yet.</p>}
+              {myNo.map((m) => (
+                <div key={m.id} className="flex gap-3 bg-cinema-panel/60 rounded-xl p-3 border border-cinema-border">
+                  {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
+                  <div className="min-w-0 flex-1">
+                    <div className="font-extrabold">{m.title}</div>
+                    <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
+                    <TrailerButton movieId={m.id} />
+                    <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
+                    <div className="flex gap-1 mt-2">
+                      <button onClick={() => castVote(m.id, "yes")} className="text-[11px] font-bold px-2 py-0.5 rounded-full border border-cinema-border text-cinema-muted hover:border-cinema-green hover:text-cinema-green">Change to yes</button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {screen === "family-picks" && (
+          <div className="max-w-lg mx-auto">
+            <p className="text-xs text-cinema-mutedDark mb-4">What everyone else in the family has said yes to.</p>
+            {spotlight.length > 0 && (
+              <>
+                <div className="text-xs font-bold text-cinema-gold uppercase tracking-wide mb-2">Recommended to the family</div>
+                <div className="space-y-3 mb-6">
+                  {Array.from(new Set(spotlight.map((s) => s.movieId)))
+                    .map((mid) => (pool ? pool.movies.find((m) => m.id === mid) : null))
+                    .filter(Boolean)
+                    .map((m) => {
+                      const myVote = (votes[m.id] || {})[email];
+                      return (
+                        <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-gold/40">
+                          {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
+                          <div className="min-w-0 flex-1">
+                            <div className="font-extrabold">{m.title}</div>
+                            <TrailerButton movieId={m.id} />
+                            <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
+                            <div className="text-[11px] text-cinema-muted mt-1">
+                              Your vote: {myVote ? myVote : "haven't swiped yet"}
+                            </div>
+                            <div className="flex gap-1 mt-1">
+                              <button onClick={() => castVote(m.id, "yes")} className={"text-[11px] font-bold px-2 py-0.5 rounded-full border " + (myVote === "yes" ? "bg-cinema-green text-cinema-ink border-cinema-green" : "border-cinema-border text-cinema-muted hover:border-cinema-green hover:text-cinema-green")}>Yes</button>
+                              <button onClick={() => castVote(m.id, "no")} className={"text-[11px] font-bold px-2 py-0.5 rounded-full border " + (myVote === "no" ? "bg-cinema-orange text-cinema-ink border-cinema-orange" : "border-cinema-border text-cinema-muted hover:border-cinema-orange hover:text-cinema-orange")}>No</button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </>
+            )}
+
+            {familyYesByMember.map(({ member, movies }) => (
+              <div key={member.email} className="mb-6">
+                <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">{member.name} said yes to ({movies.length})</div>
+                {movies.length === 0 && <p className="text-cinema-mutedDark text-sm mb-2">Nothing yet.</p>}
+                <div className="space-y-3">
+                  {movies.map((m) => {
+                    const myVote = (votes[m.id] || {})[email];
+                    return (
+                      <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
+                        {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
+                        <div className="min-w-0 flex-1">
+                          <div className="font-extrabold">{m.title}</div>
+                          <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
+                          <TrailerButton movieId={m.id} />
+                          <div className="text-[11px] text-cinema-muted mt-1">
+                            Your vote: {myVote ? myVote : "haven't swiped yet"}
+                          </div>
+                          <div className="flex gap-1 mt-1">
+                            <button onClick={() => castVote(m.id, "yes")} className={"text-[11px] font-bold px-2 py-0.5 rounded-full border " + (myVote === "yes" ? "bg-cinema-green text-cinema-ink border-cinema-green" : "border-cinema-border text-cinema-muted hover:border-cinema-green hover:text-cinema-green")}>Yes</button>
+                            <button onClick={() => castVote(m.id, "no")} className={"text-[11px] font-bold px-2 py-0.5 rounded-full border " + (myVote === "no" ? "bg-cinema-orange text-cinema-ink border-cinema-orange" : "border-cinema-border text-cinema-muted hover:border-cinema-orange hover:text-cinema-orange")}>No</button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ))}
