@@ -351,14 +351,30 @@ export default function Home() {
   const deck = useMemo(() => (pool ? pool.movies.filter((m) => !myVotedIds.has(m.id)) : []), [pool, myVotedIds]);
   const currentMovie = deck[0];
 
-  async function castVote(movieId, choice) {
-    const res = await fetch("/api/group", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: profile.group, type: "vote", payload: { movieId, name: email, choice } }),
+  useEffect(() => {
+    deck.slice(1, 4).forEach((m) => {
+      if (!m.poster_path) return;
+      const img = new window.Image();
+      img.src = `https://image.tmdb.org/t/p/w500${m.poster_path}`;
     });
-    const data = await res.json();
-    setVotes(data.votes || {});
+    // eslint-disable-next-line
+  }, [deck.length ? deck[0]?.id : null]);
+
+  async function castVote(movieId, choice) {
+    // optimistic: update locally right away so the next card appears
+    // instantly, instead of waiting on the network round-trip
+    setVotes((prev) => ({ ...prev, [movieId]: { ...(prev[movieId] || {}), [email]: choice } }));
+    try {
+      const res = await fetch("/api/group", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: profile.group, type: "vote", payload: { movieId, name: email, choice } }),
+      });
+      const data = await res.json();
+      setVotes(data.votes || {});
+    } catch {
+      // the optimistic update already stuck locally; a later group refresh will reconcile
+    }
   }
 
   function isSpotlightedByMe(movieId) {
@@ -656,9 +672,7 @@ export default function Home() {
                         className="absolute inset-0 flex items-center justify-center pointer-events-none"
                         style={{ opacity: Math.min(1, Math.abs(dragX) / 100) }}
                       >
-                        <div className="w-24 h-24 rounded-full bg-cinema-orange/90 flex items-center justify-center shadow-lg -rotate-12">
-                          <X className="w-14 h-14 text-white" strokeWidth={3} />
-                        </div>
+                        <X className="w-40 h-40 text-cinema-orange -rotate-12" strokeWidth={4} style={{ filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.5))" }} />
                       </div>
                     )}
                     {dragX > 0 && (
@@ -666,9 +680,7 @@ export default function Home() {
                         className="absolute inset-0 flex items-center justify-center pointer-events-none"
                         style={{ opacity: Math.min(1, Math.abs(dragX) / 100) }}
                       >
-                        <div className="w-24 h-24 rounded-full bg-cinema-green/90 flex items-center justify-center shadow-lg rotate-12">
-                          <Heart className="w-14 h-14 text-white" fill="white" />
-                        </div>
+                        <Heart className="w-40 h-40 text-cinema-green rotate-12" fill="currentColor" style={{ filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.5))" }} />
                       </div>
                     )}
                     <button
