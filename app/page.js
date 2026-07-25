@@ -247,17 +247,26 @@ export default function Home() {
       // teammates have already added rather than clobbering it
       const latest = await fetch(`/api/group?code=${encodeURIComponent(profile.group)}`).then((r) => r.json());
       const existingMovies = (latest.pool && latest.pool.movies) || [];
-
       const allServiceIds = Array.from(new Set(members.flatMap((m) => m.services || []).concat(profile.services || [])));
       const allGenreIds = Array.from(new Set(members.flatMap((m) => m.genres || []).concat(profile.genres || [])));
+      const sameFilters =
+        latest.pool &&
+        JSON.stringify([...(latest.pool.providerIds || [])].sort()) === JSON.stringify([...allServiceIds].sort()) &&
+        JSON.stringify([...(latest.pool.genreIds || [])].sort()) === JSON.stringify([...allGenreIds].sort());
+      const startPage = sameFilters ? latest.pool.pagesFetched || 0 : 0;
       let fetched = [];
-      for (let page = 1; page <= 5; page++) {
+      let totalResults = null;
+      let lastPageTried = startPage;
+      for (let page = startPage + 1; page <= startPage + 5; page++) {
         const url = `/api/movies?region=${profile.region || "CA"}&providers=${allServiceIds.join("|")}&genres=${allGenreIds.join("|")}&page=${page}`;
         const res = await fetch(url);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "TMDB request failed");
-        fetched = fetched.concat(data.results || []);
+        totalResults = data.total_results ?? totalResults;
+        lastPageTried = page;
         if (!data.results || data.results.length === 0) break;
+        fetched = fetched.concat(data.results);
+        if (page >= (data.total_pages || page)) break;
       }
 
       // seed additional picks from everyone's favorite movies
@@ -278,7 +287,15 @@ export default function Home() {
       for (const m of fetched) if (!byId.has(m.id)) byId.set(m.id, m);
       const merged = Array.from(byId.values());
 
-      const newPool = { region: profile.region, providerIds: allServiceIds, genreIds: allGenreIds, movies: merged, fetchedAt: Date.now() };
+      const newPool = {
+        region: profile.region,
+        providerIds: allServiceIds,
+        genreIds: allGenreIds,
+        movies: merged,
+        pagesFetched: lastPageTried,
+        totalResults,
+        fetchedAt: Date.now(),
+      };
       await fetch("/api/group", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -287,6 +304,8 @@ export default function Home() {
       setPool(newPool);
       if (fetched.length === 0 && existingMovies.length === 0) {
         setError("TMDB didn't return any titles for this combination of services and genres — try adding more of either in Settings.");
+      } else if (fetched.length === 0) {
+        setError(`That's every title TMDB has for your current services and genres (${totalResults ?? existingMovies.length} total) — try adding a service or genre in Settings for more.`);
       }
     } catch (e) {
       setError(e.message || "Couldn't fetch movies.");
