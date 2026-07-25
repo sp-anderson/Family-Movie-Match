@@ -170,6 +170,8 @@ export default function Home() {
   const cardRef = useRef(null);
   const draggingRef = useRef(false);
   const startXRef = useRef(0);
+  const startYRef = useRef(0);
+  const axisLockRef = useRef(null);
   const [dragX, setDragX] = useState(0);
   const [animating, setAnimating] = useState(false);
 
@@ -392,27 +394,54 @@ export default function Home() {
 
   function onPointerDown(e) {
     if (animating) return;
-    draggingRef.current = true;
+    draggingRef.current = true; // gesture in progress, axis not yet decided
+    axisLockRef.current = null;
     startXRef.current = e.clientX;
-    e.currentTarget.setPointerCapture(e.pointerId);
+    startYRef.current = e.clientY;
+    // deliberately NOT capturing the pointer yet — if this turns out to be
+    // a vertical scroll, the browser needs to keep handling it natively
   }
   function onPointerMove(e) {
     if (!draggingRef.current) return;
-    e.preventDefault();
-    setDragX(e.clientX - startXRef.current);
+    const dx = e.clientX - startXRef.current;
+    const dy = e.clientY - startYRef.current;
+
+    if (axisLockRef.current === null) {
+      const distance = Math.max(Math.abs(dx), Math.abs(dy));
+      if (distance < 12) return; // dead zone — too early to tell intent
+      // bias slightly toward vertical so a mostly-up-down finger never
+      // accidentally starts a swipe
+      axisLockRef.current = Math.abs(dx) > Math.abs(dy) * 1.3 ? "x" : "y";
+      if (axisLockRef.current === "x") {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } else {
+        // it's a scroll — stop tracking this gesture entirely and let the
+        // browser's native pan-y scrolling take over from here
+        draggingRef.current = false;
+        return;
+      }
+    }
+
+    if (axisLockRef.current === "x") {
+      e.preventDefault();
+      setDragX(dx);
+    }
   }
   function onPointerEnd(e) {
     if (!draggingRef.current) return;
     draggingRef.current = false;
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {}
-    setDragX((x) => {
-      if (x > 100) commitSwipe("yes");
-      else if (x < -100) commitSwipe("no");
-      else return 0;
-      return x;
-    });
+    if (axisLockRef.current === "x") {
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {}
+      setDragX((x) => {
+        if (x > 100) commitSwipe("yes");
+        else if (x < -100) commitSwipe("no");
+        else return 0;
+        return x;
+      });
+    }
+    axisLockRef.current = null;
   }
 
   async function fetchTrailer(movieId) {
@@ -611,7 +640,7 @@ export default function Home() {
                   style={{
                     transform: `translateX(${dragX}px) rotate(${rotation}deg)`,
                     transition: draggingRef.current ? "none" : "transform 0.2s ease",
-                    touchAction: "none",
+                    touchAction: "pan-y",
                   }}
                   className="rounded-2xl bg-cinema-card text-cinema-ink overflow-hidden shadow-xl cursor-grab active:cursor-grabbing select-none"
                 >
