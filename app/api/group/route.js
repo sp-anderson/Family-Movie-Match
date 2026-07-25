@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { kv } from "@vercel/kv";
+import { redis as kv } from "../../../lib/redis";
 
 // GET /api/group?code=THOMPSONS  -> { members: [], votes: {}, pool: null }
 export async function GET(request) {

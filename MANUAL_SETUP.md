@@ -39,11 +39,16 @@ themoviedb.org → create account → Settings → API → request a key
    - `https://family-movie-match.vercel.app/api/auth/callback/google`
 6. Save — copy the **Client ID** and **Client Secret** it gives you
 
-## 5. Set up Vercel KV (the database)
+## 5. Set up the database (Upstash Redis via Vercel Marketplace)
 
-1. Go to your project on vercel.com
-2. Storage tab → Create Database → KV → create it and connect it to this
-   project. Vercel will offer to auto-add the env vars for you — let it.
+Vercel retired its native "KV" product — it's now the Upstash integration:
+
+1. Go to your project on vercel.com → Storage tab → Browse Storage
+2. Under Marketplace Database Providers, choose **Upstash** ("Serverless DB —
+   Redis, Vector, Queue, Search")
+3. Create a Redis database and connect it to this project. Vercel will offer
+   to auto-add the env vars for you — let it (they'll show up as
+   `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`).
 
 ## 6. Environment variables
 
@@ -57,15 +62,16 @@ NEXTAUTH_SECRET=   (run: openssl rand -base64 32   and paste the output)
 NEXTAUTH_URL=http://localhost:3000
 ```
 
-(Leave the `KV_REST_API_*` vars — Vercel already added those for you in step 5,
-and you'll pull them into your local `.env.local` in step 7.)
+(Leave the `UPSTASH_REDIS_REST_*` vars — Vercel already added those for you
+in step 5, and you'll pull them into your local `.env.local` in step 7.)
 
 ## 7. Pull Vercel's env vars locally (optional but easiest)
 
 If you have the Vercel CLI (`npm i -g vercel`), run `vercel login`, then
 `vercel link` (choose your existing project), then `vercel env pull .env.local`
-— this fills in the KV variables automatically. Otherwise, copy them manually
-from Vercel dashboard → Project → Settings → Environment Variables.
+— this fills in the Upstash Redis variables automatically. Otherwise, copy
+them manually from Vercel dashboard → Project → Settings → Environment
+Variables.
 
 ## 8. Test locally
 
