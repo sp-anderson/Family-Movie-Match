@@ -117,6 +117,32 @@ function SpotlightControl({ movieId, spotlight, myEmail, onToggle }) {
   );
 }
 
+function DetailsRow({ movie }) {
+  const [details, setDetails] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/details?movieId=${movie.id}`)
+      .then((r) => r.json())
+      .then((d) => !cancelled && setDetails(d))
+      .catch(() => !cancelled && setDetails({}));
+    return () => (cancelled = true);
+  }, [movie.id]);
+
+  const rating = typeof movie.vote_average === "number" && movie.vote_average > 0 ? movie.vote_average.toFixed(1) : null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] font-bold text-cinema-mutedDark mt-1">
+      {rating && (
+        <span className="inline-flex items-center gap-1">
+          <Star className="w-3 h-3 text-cinema-gold" fill="currentColor" /> {rating}/10
+        </span>
+      )}
+      {details?.runtime ? <span>{details.runtime} min</span> : null}
+      {details?.cast?.length ? <span>Starring {details.cast.join(", ")}</span> : null}
+    </div>
+  );
+}
+
 function TrailerButton({ movieId }) {
   const [key, setKey] = useState(undefined); // undefined = not fetched, null = none found
   useEffect(() => {
@@ -162,10 +188,20 @@ export default function Home() {
   const [regionInput, setRegionInput] = useState("CA");
   const [roleInput, setRoleInput] = useState("parent");
   const [matchWith, setMatchWith] = useState(null); // null = everyone in the family
+  const [celebration, setCelebration] = useState(null); // the movie that just became a full match
+
+  useEffect(() => {
+    if (!celebration) return;
+    const t = setTimeout(() => setCelebration(null), 3200);
+    return () => clearTimeout(t);
+  }, [celebration]);
   const [servicesInput, setServicesInput] = useState([]);
   const [genresInput, setGenresInput] = useState([]);
   const [favInput, setFavInput] = useState("");
   const [favorites, setFavorites] = useState([]);
+  const [favSuggestions, setFavSuggestions] = useState([]);
+  const [favSearching, setFavSearching] = useState(false);
+  const [historySearch, setHistorySearch] = useState("");
 
   const cardRef = useRef(null);
   const draggingRef = useRef(false);
@@ -249,11 +285,35 @@ export default function Home() {
   function toggleGenre(id) {
     setGenresInput((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   }
-  function addFavorite() {
-    const v = favInput.trim();
+  useEffect(() => {
+    const q = favInput.trim();
+    if (q.length < 2) {
+      setFavSuggestions([]);
+      return;
+    }
+    setFavSearching(true);
+    const t = setTimeout(() => {
+      fetch(`/api/search?query=${encodeURIComponent(q)}`)
+        .then((r) => r.json())
+        .then((d) => setFavSuggestions(d.results || []))
+        .catch(() => setFavSuggestions([]))
+        .finally(() => setFavSearching(false));
+    }, 350);
+    return () => clearTimeout(t);
+  }, [favInput]);
+
+  function addFavoriteTitle(title) {
+    const v = title.trim();
     if (!v) return;
-    setFavorites((f) => [...f, v]);
+    setFavorites((f) => (f.some((x) => x.toLowerCase() === v.toLowerCase()) ? f : [...f, v]));
     setFavInput("");
+    setFavSuggestions([]);
+  }
+  function addFavorite() {
+    addFavoriteTitle(favInput);
+  }
+  function removeFavorite(title) {
+    setFavorites((f) => f.filter((x) => x !== title));
   }
 
   async function handleSaveSetup() {
@@ -296,15 +356,18 @@ export default function Home() {
         if (page >= (data.total_pages || page)) break;
       }
 
-      // seed additional picks from everyone's favorite movies
-      const allFavorites = Array.from(new Set(members.flatMap((m) => m.favorites || []).concat(profile.favorites || [])));
-      if (allFavorites.length) {
+      // seed additional picks from each family member's own favorites,
+      // tagged with whose favorite it actually came from
+      for (const mem of members) {
+        const favs = mem.favorites || [];
+        if (!favs.length) continue;
         try {
-          const recRes = await fetch(`/api/recommendations?titles=${encodeURIComponent(allFavorites.join("|"))}&region=${profile.region || "CA"}`);
+          const recRes = await fetch(`/api/recommendations?titles=${encodeURIComponent(favs.join("|"))}&region=${profile.region || "CA"}`);
           const recData = await recRes.json();
-          fetched = fetched.concat(recData.results || []);
+          const tagged = (recData.results || []).map((m) => ({ ...m, _becauseName: mem.email === email ? "you" : mem.name }));
+          fetched = fetched.concat(tagged);
         } catch {
-          // recommendations are a bonus — don't block the whole fetch if this fails
+          // recommendations are a bonus — don't block the whole fetch if one member's batch fails
         }
       }
 
@@ -394,10 +457,16 @@ export default function Home() {
 
   function commitSwipe(choice) {
     if (!currentMovie || animating) return;
+    const movie = currentMovie;
+    if (choice === "yes" && members.length > 0) {
+      const updatedVotesForMovie = { ...(votes[movie.id] || {}), [email]: "yes" };
+      const isFullMatch = members.every((m) => updatedVotesForMovie[m.email] === "yes");
+      if (isFullMatch) setCelebration(movie);
+    }
     setAnimating(true);
     setDragX(choice === "yes" ? 500 : -500);
     setTimeout(() => {
-      castVote(currentMovie.id, choice);
+      castVote(movie.id, choice);
       setDragX(0);
       setAnimating(false);
     }, 200);
@@ -488,15 +557,6 @@ export default function Home() {
     // eslint-disable-next-line
   }, [pool, votes, members, matchWith, email]);
 
-  const alreadySeen = useMemo(() => {
-    if (!pool || !consideredMembers.length) return [];
-    return pool.movies.filter((m) => {
-      const vs = votesFor(m);
-      return vs.every((v) => v === "yes" || v === "seen") && vs.some((v) => v === "seen");
-    });
-    // eslint-disable-next-line
-  }, [pool, votes, members, matchWith, email]);
-
   const myWatched = useMemo(() => {
     if (!pool || !email) return [];
     return pool.movies.filter((m) => (votes[m.id] || {})[email] === "seen");
@@ -548,6 +608,26 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-cinema-bg text-stone-50" style={bodyFont}>
+      {celebration && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-6"
+          onClick={() => setCelebration(null)}
+        >
+          <div className="text-center animate-[pulse_1.2s_ease-in-out_infinite]">
+            <Sparkles className="w-16 h-16 text-cinema-gold mx-auto mb-2" />
+            <div className="text-5xl text-cinema-gold mb-3" style={displayFont}>IT'S A MATCH!</div>
+            {celebration.poster_path && (
+              <img
+                src={`https://image.tmdb.org/t/p/w300${celebration.poster_path}`}
+                alt={celebration.title}
+                className="w-40 mx-auto rounded-xl shadow-2xl mb-3 border-4 border-cinema-gold"
+              />
+            )}
+            <div className="text-xl font-extrabold text-stone-50">{celebration.title}</div>
+            <div className="text-sm text-cinema-muted mt-1">Everyone in the family said yes 🎉</div>
+          </div>
+        </div>
+      )}
       <div className="px-5 pt-5 pb-3 flex items-center justify-between border-b border-cinema-border/60">
         <div className="flex items-center gap-2">
           <Film className="w-6 h-6 text-cinema-gold" />
@@ -563,7 +643,7 @@ export default function Home() {
         <div className="flex gap-1 px-5 pt-3 overflow-x-auto">
           {[
             { id: "swipe", label: "Swipe", icon: Heart },
-            { id: "matches", label: `Matches (${readyToWatch.length + alreadySeen.length})`, icon: Sparkles },
+            { id: "matches", label: `Matches (${readyToWatch.length})`, icon: Sparkles },
             { id: "seen", label: `Seen (${myWatched.length})`, icon: Eye },
             { id: "history", label: "My Votes", icon: Clock },
             { id: "family-picks", label: "Family Picks", icon: Compass },
@@ -624,11 +704,53 @@ export default function Home() {
             </div>
             <div className="mb-6">
               <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">All-time favorite movies (optional)</div>
-              <div className="flex gap-2 mb-2">
-                <input value={favInput} onChange={(e) => setFavInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addFavorite()} placeholder="Add a title…" className="flex-1 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold" />
-                <button onClick={addFavorite} className="px-3 py-2 rounded-lg bg-cinema-panel text-cinema-mutedLight text-xs font-bold">Add</button>
+              <div className="relative mb-2">
+                <div className="flex gap-2">
+                  <input
+                    value={favInput}
+                    onChange={(e) => setFavInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && addFavorite()}
+                    placeholder="Search a title…"
+                    className="flex-1 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold"
+                  />
+                  <button onClick={addFavorite} className="px-3 py-2 rounded-lg bg-cinema-panel text-cinema-mutedLight text-xs font-bold">Add as typed</button>
+                </div>
+                {favInput.trim().length >= 2 && (
+                  <div className="absolute z-10 left-0 right-0 mt-1 bg-cinema-panel border border-cinema-border rounded-lg overflow-hidden shadow-xl">
+                    {favSearching && <div className="px-3 py-2 text-xs text-cinema-muted">Searching…</div>}
+                    {!favSearching && favSuggestions.length === 0 && (
+                      <div className="px-3 py-2 text-xs text-cinema-muted">No matches — "Add as typed" will use it exactly as written.</div>
+                    )}
+                    {!favSearching &&
+                      favSuggestions.map((s) => (
+                        <button
+                          key={s.id}
+                          onClick={() => addFavoriteTitle(s.title)}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-cinema-border"
+                        >
+                          {s.poster_path ? (
+                            <img src={`https://image.tmdb.org/t/p/w92${s.poster_path}`} className="w-8 h-11 object-cover rounded flex-shrink-0" alt={s.title} />
+                          ) : (
+                            <div className="w-8 h-11 bg-cinema-border rounded flex-shrink-0" />
+                          )}
+                          <span className="text-sm text-stone-50 font-bold">
+                            {s.title} {s.year && <span className="text-cinema-muted font-normal">({s.year})</span>}
+                          </span>
+                        </button>
+                      ))}
+                  </div>
+                )}
               </div>
-              <div className="flex flex-wrap gap-2">{favorites.map((f, i) => <span key={i} className="px-3 py-1 rounded-full bg-cinema-panel text-xs text-cinema-mutedLight flex items-center gap-1"><Star className="w-3 h-3 text-cinema-gold" /> {f}</span>)}</div>
+              <div className="flex flex-wrap gap-2">
+                {favorites.map((f, i) => (
+                  <span key={i} className="pl-3 pr-1 py-1 rounded-full bg-cinema-panel text-xs text-cinema-mutedLight flex items-center gap-1">
+                    <Star className="w-3 h-3 text-cinema-gold" /> {f}
+                    <button onClick={() => removeFavorite(f)} className="ml-1 w-4 h-4 rounded-full hover:bg-cinema-orange/30 flex items-center justify-center" aria-label={`Remove ${f}`}>
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
             </div>
             <button onClick={handleSaveSetup} className="w-full py-2.5 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight">Save settings</button>
           </div>
@@ -707,9 +829,10 @@ export default function Home() {
                   <div className="p-4">
                     <div className="font-extrabold text-lg leading-snug">{currentMovie.title}</div>
                     {currentMovie._because && (
-                      <div className="text-xs text-cinema-orange font-bold mb-1">Because you liked {currentMovie._because}</div>
+                      <div className="text-xs text-cinema-orange font-bold mb-1">Because {currentMovie._becauseName || "your family"} liked {currentMovie._because}</div>
                     )}
                     <div className="flex flex-wrap gap-1 mt-1 mb-2">{genreNames(currentMovie.genre_ids).map((g) => <span key={g} className="text-[11px] px-2 py-0.5 rounded-full bg-cinema-ink/10 text-cinema-ink font-bold">{g}</span>)}</div>
+                    <DetailsRow movie={currentMovie} />
                     <p className="text-sm text-cinema-ink leading-snug">{currentMovie.overview}</p>
                     {trailers[currentMovie.id] && (
                       <a href={`https://www.youtube.com/watch?v=${trailers[currentMovie.id]}`} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-sm font-bold text-cinema-orange hover:text-cinema-orangeLight">
@@ -757,54 +880,32 @@ export default function Home() {
               </div>
             )}
 
-            {readyToWatch.length === 0 && alreadySeen.length === 0 && (
+            {readyToWatch.length === 0 && (
               <p className="text-cinema-muted text-sm text-center py-6">No shared picks yet with this group — keep swiping.</p>
             )}
 
             {readyToWatch.length > 0 && (
-              <>
-                <div className="text-xs font-bold text-cinema-gold uppercase tracking-wide mb-2">New to watch together</div>
-                <div className="space-y-3 mb-6">
-                  {readyToWatch.map((m) => (
-                    <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
-                      {m.poster_path && (
-                        <div className="relative flex-shrink-0">
-                          {isNewRelease(m.release_date) && <NewBadge />}
-                          <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg" alt={m.title} />
-                        </div>
-                      )}
-                      <div className="min-w-0">
-                        <div className="font-extrabold flex items-center gap-1"><Ticket className="w-4 h-4 text-cinema-gold flex-shrink-0" /> {m.title}</div>
-                        {m._because && <div className="text-[11px] text-cinema-orange font-bold">Because you liked {m._because}</div>}
-                        <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
-                        <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
-                        <ProviderRow movieId={m.id} region={profile?.region} />
-                        <TrailerButton movieId={m.id} />
+              <div className="space-y-3">
+                {readyToWatch.map((m) => (
+                  <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
+                    {m.poster_path && (
+                      <div className="relative flex-shrink-0">
+                        {isNewRelease(m.release_date) && <NewBadge />}
+                        <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg" alt={m.title} />
                       </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="font-extrabold flex items-center gap-1"><Ticket className="w-4 h-4 text-cinema-gold flex-shrink-0" /> {m.title}</div>
+                      {m._because && <div className="text-[11px] text-cinema-orange font-bold">Because {m._becauseName || "your family"} liked {m._because}</div>}
+                      <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
+                      <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
+                      <DetailsRow movie={m} />
+                      <ProviderRow movieId={m.id} region={profile?.region} />
+                      <TrailerButton movieId={m.id} />
                     </div>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {alreadySeen.length > 0 && (
-              <>
-                <div className="text-xs font-bold text-cinema-mutedDark uppercase tracking-wide mb-2">Already seen by someone</div>
-                <div className="space-y-3 opacity-80">
-                  {alreadySeen.map((m) => (
-                    <div key={m.id} className="flex gap-3 bg-cinema-panel/60 rounded-xl p-3 border border-cinema-border">
-                      {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
-                      <div className="min-w-0">
-                        <div className="font-extrabold flex items-center gap-1"><Ticket className="w-4 h-4 text-cinema-mutedDark flex-shrink-0" /> {m.title}</div>
-                        <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
-                        <p className="text-xs text-cinema-mutedDark line-clamp-2">{m.overview}</p>
-                        <ProviderRow movieId={m.id} region={profile?.region} />
-                        <TrailerButton movieId={m.id} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         )}
@@ -827,12 +928,25 @@ export default function Home() {
 
         {screen === "history" && (
           <div className="max-w-lg mx-auto">
-            <p className="text-xs text-cinema-mutedDark mb-4">Everything you've swiped on. Change your mind any time.</p>
+            <p className="text-xs text-cinema-mutedDark mb-3">Everything you've swiped on. Change your mind any time.</p>
 
-            <div className="text-xs font-bold text-cinema-gold uppercase tracking-wide mb-2">You said yes ({myYes.length})</div>
+            <input
+              value={historySearch}
+              onChange={(e) => setHistorySearch(e.target.value)}
+              placeholder="Search your votes…"
+              className="w-full px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold mb-5"
+            />
+
+            <div className="text-xs font-bold text-cinema-gold uppercase tracking-wide mb-2">
+              You said yes ({myYes.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase())).length})
+            </div>
             <div className="space-y-3 mb-6">
-              {myYes.length === 0 && <p className="text-cinema-muted text-sm py-2">Nothing yet.</p>}
-              {myYes.map((m) => (
+              {myYes.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase())).length === 0 && (
+                <p className="text-cinema-muted text-sm py-2">{historySearch.trim() ? "No matches." : "Nothing yet."}</p>
+              )}
+              {myYes
+                .filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase()))
+                .map((m) => (
                 <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
                   {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
                   <div className="min-w-0 flex-1">
@@ -848,10 +962,16 @@ export default function Home() {
               ))}
             </div>
 
-            <div className="text-xs font-bold text-cinema-mutedDark uppercase tracking-wide mb-2">You said no ({myNo.length})</div>
+            <div className="text-xs font-bold text-cinema-mutedDark uppercase tracking-wide mb-2">
+              You said no ({myNo.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase())).length})
+            </div>
             <div className="space-y-3">
-              {myNo.length === 0 && <p className="text-cinema-muted text-sm py-2">Nothing yet.</p>}
-              {myNo.map((m) => (
+              {myNo.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase())).length === 0 && (
+                <p className="text-cinema-muted text-sm py-2">{historySearch.trim() ? "No matches." : "Nothing yet."}</p>
+              )}
+              {myNo
+                .filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase()))
+                .map((m) => (
                 <div key={m.id} className="flex gap-3 bg-cinema-panel/60 rounded-xl p-3 border border-cinema-border">
                   {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
                   <div className="min-w-0 flex-1">
