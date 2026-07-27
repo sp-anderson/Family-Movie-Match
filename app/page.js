@@ -271,7 +271,7 @@ export default function Home() {
 
   const [groupInput, setGroupInput] = useState("");
   const [regionInput, setRegionInput] = useState("CA");
-  const [roleInput, setRoleInput] = useState("parent");
+  const [roleInput, setRoleInput] = useState("child");
   const [matchWith, setMatchWith] = useState(null); // null = everyone in the family
   const [celebration, setCelebration] = useState(null); // the movie that just became a full match
 
@@ -308,7 +308,7 @@ export default function Home() {
       if (data.profile) {
         setProfile(data.profile);
         setRegionInput(data.profile.region || "CA");
-        setRoleInput(data.profile.role || "parent");
+        setRoleInput(data.profile.role || "child");
         setServicesInput(data.profile.services || []);
         setGenresInput(data.profile.genres || []);
         setFavorites(data.profile.favorites || []);
@@ -344,6 +344,10 @@ export default function Home() {
 
   async function setChildMaxRating(member, rating) {
     await saveMember(profile.group, { ...member, maxRating: rating || null });
+  }
+
+  async function setMemberRole(member, role) {
+    await saveMember(profile.group, { ...member, role });
   }
 
   async function saveMember(group, memberObj) {
@@ -409,8 +413,17 @@ export default function Home() {
     setError("");
     if (!servicesInput.length) return setError("Pick at least one streaming service.");
     if (!genresInput.length) return setError("Pick at least one genre you're into.");
-    const merged = await saveProfile({ region: regionInput, role: roleInput, services: servicesInput, genres: genresInput, favorites });
-    await saveMember(merged.group, { name: displayName, email, role: roleInput, services: servicesInput, genres: genresInput, favorites });
+    const existingSelf = members.find((m) => m.email === email);
+    const otherParentsExist = members.some((m) => m.role === "parent" && m.email !== email);
+    const iAmAlreadyParent = existingSelf?.role === "parent";
+    const roleLocked = otherParentsExist && !iAmAlreadyParent;
+    const finalRole = roleLocked ? "child" : roleInput;
+    if (roleLocked && roleInput === "parent") {
+      setError("This family already has a parent — ask them to promote you from the Family tab.");
+      return;
+    }
+    const merged = await saveProfile({ region: regionInput, role: finalRole, services: servicesInput, genres: genresInput, favorites });
+    await saveMember(merged.group, { name: displayName, email, role: finalRole, services: servicesInput, genres: genresInput, favorites });
     setScreen("swipe");
   }
 
@@ -494,6 +507,7 @@ export default function Home() {
 
   const myMember = members.find((m) => m.email === email);
   const myMaxRating = myMember && myMember.role === "child" ? myMember.maxRating : null;
+  const roleLockedForMe = members.some((m) => m.role === "parent" && m.email !== email) && myMember?.role !== "parent";
 
   useEffect(() => {
     if (!myMaxRating || !pool) return;
@@ -943,9 +957,19 @@ export default function Home() {
             <div className="mb-5">
               <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Your role in this family</div>
               <div className="flex gap-2">
-                <Chip active={roleInput === "parent"} onClick={() => setRoleInput("parent")}>Parent</Chip>
+                <Chip
+                  active={roleInput === "parent"}
+                  onClick={() => !roleLockedForMe && setRoleInput("parent")}
+                >
+                  Parent{roleLockedForMe ? " 🔒" : ""}
+                </Chip>
                 <Chip active={roleInput === "child"} onClick={() => setRoleInput("child")}>Child</Chip>
               </div>
+              {roleLockedForMe && (
+                <p className="text-[11px] text-cinema-mutedDark mt-1">
+                  This family already has a parent — ask them to promote you from the Family tab.
+                </p>
+              )}
             </div>
             <div className="mb-5">
               <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Region</div>
@@ -1398,6 +1422,19 @@ export default function Home() {
                 <div className="flex flex-wrap gap-1 mb-1">{(m.services || []).map((sid) => <span key={sid} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{SERVICES.find((s) => s.id === sid)?.name}</span>)}</div>
                 <div className="flex flex-wrap gap-1 mb-1">{(m.genres || []).map((gid) => <span key={gid} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-gold/20 text-cinema-gold font-bold">{GENRES.find((g) => g.id === gid)?.name}</span>)}</div>
                 {m.favorites?.length > 0 && <div className="text-xs text-cinema-muted mt-1">Favorites: {m.favorites.join(", ")}</div>}
+                {myMember?.role === "parent" && m.email !== email && (
+                  <div className="mt-2 pt-2 border-t border-cinema-border flex items-center gap-2">
+                    <span className="text-xs font-bold text-cinema-muted">Role:</span>
+                    <select
+                      value={m.role || "child"}
+                      onChange={(e) => setMemberRole(m, e.target.value)}
+                      className="text-xs font-bold px-2 py-1 rounded-lg bg-cinema-bg border border-cinema-border text-stone-50"
+                    >
+                      <option value="child">Child</option>
+                      <option value="parent">Parent</option>
+                    </select>
+                  </div>
+                )}
                 {m.role === "child" && (
                   <div className="mt-2 pt-2 border-t border-cinema-border">
                     {myMember?.role === "parent" ? (
