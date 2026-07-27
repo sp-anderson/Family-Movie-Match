@@ -322,13 +322,14 @@ export default function Home() {
   }, [status, email]);
 
   const loadGroup = useCallback(async (code) => {
-    if (!code) return;
+    if (!code) return null;
     const res = await fetch(`/api/group?code=${encodeURIComponent(code)}`);
     const data = await res.json();
     setMembers(data.members || []);
     setPool(data.pool || null);
     setVotes(data.votes || {});
     setSpotlight(data.spotlight || []);
+    return data;
   }, []);
 
   async function saveProfile(next) {
@@ -365,7 +366,10 @@ export default function Home() {
     const group = groupInput.trim().toUpperCase();
     if (!group) return setError("Enter a family group code.");
     const merged = await saveProfile({ group });
-    await loadGroup(group);
+    const data = await loadGroup(group);
+    if (data && (data.members || []).length === 0) {
+      setRoleInput("parent"); // first person in a brand-new family — needs to be able to set up parental controls
+    }
     setScreen("setup");
   }
 
@@ -459,14 +463,18 @@ export default function Home() {
       }
 
       // seed additional picks from each family member's own favorites,
-      // tagged with whose favorite it actually came from
+      // tagged with whose favorite it actually came from — but only keep
+      // ones that actually match a genre the family selected, since TMDB's
+      // "recommended for this movie" endpoint ignores genre entirely
       for (const mem of members) {
         const favs = mem.favorites || [];
         if (!favs.length) continue;
         try {
           const recRes = await fetch(`/api/recommendations?titles=${encodeURIComponent(favs.join("|"))}&region=${profile.region || "CA"}`);
           const recData = await recRes.json();
-          const tagged = (recData.results || []).map((m) => ({ ...m, _becauseName: mem.email === email ? "you" : mem.name }));
+          const tagged = (recData.results || [])
+            .filter((m) => (m.genre_ids || []).some((g) => allGenreIds.includes(g)))
+            .map((m) => ({ ...m, _becauseName: mem.email === email ? "you" : mem.name }));
           fetched = fetched.concat(tagged);
         } catch {
           // recommendations are a bonus — don't block the whole fetch if one member's batch fails
@@ -530,6 +538,12 @@ export default function Home() {
     // eslint-disable-next-line
   }, [pool, myMaxRating, certifications]);
 
+  const [reconsidered, setReconsidered] = useState(new Set()); // movieIds already re-decided this session, so nudges don't loop
+
+  function nudgeRecommenders(movieId) {
+    return spotlight.filter((s) => s.movieId === movieId && s.byEmail !== email);
+  }
+
   const myVotedIds = useMemo(() => {
     const ids = new Set();
     Object.entries(votes).forEach(([mid, byEmail]) => {
@@ -540,7 +554,15 @@ export default function Home() {
 
   const deck = useMemo(() => {
     if (!pool) return [];
-    let movies = pool.movies.filter((m) => !myVotedIds.has(m.id));
+    let movies = pool.movies.filter((m) => {
+      const alreadyVoted = myVotedIds.has(m.id);
+      if (!alreadyVoted) return true;
+      // let a movie reappear if someone else in the family wants to watch it
+      // and you'd previously said no / already seen it
+      const myVote = (votes[m.id] || {})[email];
+      const nudged = (myVote === "no" || myVote === "seen") && nudgeRecommenders(m.id).length > 0 && !reconsidered.has(m.id);
+      return nudged;
+    });
     if (myMaxRating) {
       const maxRank = ratingRank(myMaxRating);
       movies = movies.filter((m) => {
@@ -550,8 +572,10 @@ export default function Home() {
       });
     }
     return movies;
-  }, [pool, myVotedIds, myMaxRating, certifications]);
+    // eslint-disable-next-line
+  }, [pool, myVotedIds, myMaxRating, certifications, votes, email, spotlight, reconsidered]);
   const currentMovie = deck[0];
+  const currentMovieNudges = currentMovie ? nudgeRecommenders(currentMovie.id) : [];
 
   const ratingCheckPending = myMaxRating && pool ? pool.movies.some((m) => certifications[m.id] === undefined) : false;
 
@@ -666,6 +690,9 @@ export default function Home() {
   function commitSwipe(choice) {
     if (!currentMovie || animating) return;
     const movie = currentMovie;
+    if (nudgeRecommenders(movie.id).length > 0) {
+      setReconsidered((prev) => new Set(prev).add(movie.id));
+    }
     if (choice === "yes" && members.length > 0) {
       const updatedVotesForMovie = { ...(votes[movie.id] || {}), [email]: "yes" };
       const isFullMatch = members.every((m) => updatedVotesForMovie[m.email] === "yes");
@@ -682,6 +709,9 @@ export default function Home() {
 
   function markSeen() {
     if (!currentMovie || animating) return;
+    if (nudgeRecommenders(currentMovie.id).length > 0) {
+      setReconsidered((prev) => new Set(prev).add(currentMovie.id));
+    }
     castVote(currentMovie.id, "seen");
   }
 
@@ -1122,6 +1152,11 @@ export default function Home() {
                   </div>
                   <div className="p-4">
                     <div className="font-extrabold text-lg leading-snug">{currentMovie.title}</div>
+                    {currentMovieNudges.length > 0 && (
+                      <div className="text-xs text-cinema-gold font-bold mb-1">
+                        👀 {currentMovieNudges.map((n) => n.byName).join(", ")} want{currentMovieNudges.length === 1 ? "s" : ""} to watch this
+                      </div>
+                    )}
                     {currentMovie._because && (
                       <div className="text-xs text-cinema-orange font-bold mb-1">Because {currentMovie._becauseName || "your family"} liked {currentMovie._because}</div>
                     )}
