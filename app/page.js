@@ -174,7 +174,7 @@ function SpotlightControl({ movieId, spotlight, myEmail, onToggle }) {
   );
 }
 
-function DetailsRow({ movie }) {
+function DetailsRow({ movie, certifications, setCertifications }) {
   const [details, setDetails] = useState(null);
   useEffect(() => {
     let cancelled = false;
@@ -185,12 +185,27 @@ function DetailsRow({ movie }) {
     return () => (cancelled = true);
   }, [movie.id]);
 
+  useEffect(() => {
+    if (!setCertifications || certifications[movie.id] !== undefined) return;
+    let cancelled = false;
+    fetch(`/api/certification?movieId=${movie.id}`)
+      .then((r) => r.json())
+      .then((d) => !cancelled && setCertifications((prev) => ({ ...prev, [movie.id]: d.certification || "" })))
+      .catch(() => !cancelled && setCertifications((prev) => ({ ...prev, [movie.id]: "" })));
+    return () => (cancelled = true);
+    // eslint-disable-next-line
+  }, [movie.id]);
+
   const rating = typeof movie.vote_average === "number" && movie.vote_average > 0 ? movie.vote_average.toFixed(1) : null;
   const year = movie.release_date ? movie.release_date.slice(0, 4) : null;
+  const cert = certifications ? certifications[movie.id] : undefined;
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] font-bold text-cinema-mutedDark mt-1">
       {year && <span>{year}</span>}
+      {cert ? (
+        <span className="px-1.5 py-0.5 rounded border border-cinema-mutedDark text-cinema-mutedDark">{cert}</span>
+      ) : null}
       {rating && (
         <span className="inline-flex items-center gap-1">
           <Star className="w-3 h-3 text-cinema-gold" fill="currentColor" /> {rating}/10
@@ -791,6 +806,41 @@ export default function Home() {
     historySort
   );
 
+  function matchesFor(emailList) {
+    if (!pool) return [];
+    return pool.movies.filter((m) => emailList.every((e) => (votes[m.id] || {})[e] === "yes") && passesRatingFilter(m));
+  }
+
+  const isTopSelectionEveryone = matchWith === null;
+  const isTopSelectionExactlyOneMember = matchWith !== null && matchWith.length === 1;
+
+  const everyoneMatches = !isTopSelectionEveryone ? matchesFor([email, ...otherMembers.map((m) => m.email)]) : [];
+  const perMemberMatches = otherMembers
+    .filter((m) => !(isTopSelectionExactlyOneMember && matchWith[0] === m.email))
+    .map((m) => ({ member: m, movies: matchesFor([email, m.email]) }));
+
+  function renderMatchCard(m) {
+    return (
+      <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
+        {m.poster_path && (
+          <div className="relative flex-shrink-0">
+            {isNewRelease(m.release_date) && <NewBadge />}
+            <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg" alt={m.title} />
+          </div>
+        )}
+        <div className="min-w-0">
+          <div className="font-extrabold flex items-center gap-1"><Ticket className="w-4 h-4 text-cinema-gold flex-shrink-0" /> {m.title}</div>
+          {m._because && <div className="text-[11px] text-cinema-orange font-bold">Because {m._becauseName || "your family"} liked {m._because}</div>}
+          <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
+          <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
+          <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
+          <ProviderRow movieId={m.id} region={profile?.region} />
+          <TrailerButton movieId={m.id} />
+        </div>
+      </div>
+    );
+  }
+
   if (status === "loading") {
     return <div className="min-h-screen flex items-center justify-center bg-cinema-bg text-cinema-gold" style={bodyFont}>Loading…</div>;
   }
@@ -1052,7 +1102,7 @@ export default function Home() {
                       <div className="text-xs text-cinema-orange font-bold mb-1">Because {currentMovie._becauseName || "your family"} liked {currentMovie._because}</div>
                     )}
                     <div className="flex flex-wrap gap-1 mt-1 mb-2">{genreNames(currentMovie.genre_ids).map((g) => <span key={g} className="text-[11px] px-2 py-0.5 rounded-full bg-cinema-ink/10 text-cinema-ink font-bold">{g}</span>)}</div>
-                    <DetailsRow movie={currentMovie} />
+                    <DetailsRow movie={currentMovie} certifications={certifications} setCertifications={setCertifications} />
                     <p className="text-sm text-cinema-ink leading-snug">{currentMovie.overview}</p>
                     {trailers[currentMovie.id] && (
                       <a href={`https://www.youtube.com/watch?v=${trailers[currentMovie.id]}`} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-sm font-bold text-cinema-orange hover:text-cinema-orangeLight">
@@ -1122,25 +1172,31 @@ export default function Home() {
 
             {visibleMatches.length > 0 && (
               <div className="space-y-3">
-                {visibleMatches.map((m) => (
-                  <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
-                    {m.poster_path && (
-                      <div className="relative flex-shrink-0">
-                        {isNewRelease(m.release_date) && <NewBadge />}
-                        <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg" alt={m.title} />
-                      </div>
-                    )}
-                    <div className="min-w-0">
-                      <div className="font-extrabold flex items-center gap-1"><Ticket className="w-4 h-4 text-cinema-gold flex-shrink-0" /> {m.title}</div>
-                      {m._because && <div className="text-[11px] text-cinema-orange font-bold">Because {m._becauseName || "your family"} liked {m._because}</div>}
-                      <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
-                      <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
-                      <DetailsRow movie={m} />
-                      <ProviderRow movieId={m.id} region={profile?.region} />
-                      <TrailerButton movieId={m.id} />
-                    </div>
+                {visibleMatches.map(renderMatchCard)}
+              </div>
+            )}
+
+            {(everyoneMatches.length > 0 || perMemberMatches.some((p) => p.movies.length > 0)) && (
+              <div className="mt-8 pt-6 border-t-2 border-cinema-border">
+                <div className="text-sm font-bold text-cinema-mutedLight mb-4" style={displayFont}>
+                  OTHER MATCHES IN YOUR FAMILY
+                </div>
+
+                {everyoneMatches.length > 0 && (
+                  <div className="mb-6 pb-6 border-b border-cinema-border last:border-b-0 last:pb-0 last:mb-0">
+                    <div className="text-xs font-bold text-cinema-gold uppercase tracking-wide mb-2">Everyone</div>
+                    <div className="space-y-3">{everyoneMatches.map(renderMatchCard)}</div>
                   </div>
-                ))}
+                )}
+
+                {perMemberMatches
+                  .filter((p) => p.movies.length > 0)
+                  .map((p) => (
+                    <div key={p.member.email} className="mb-6 pb-6 border-b border-cinema-border last:border-b-0 last:pb-0 last:mb-0">
+                      <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">You & {p.member.name}</div>
+                      <div className="space-y-3">{p.movies.map(renderMatchCard)}</div>
+                    </div>
+                  ))}
               </div>
             )}
           </div>
@@ -1197,7 +1253,7 @@ export default function Home() {
                   <div className="min-w-0 flex-1">
                     <div className="font-extrabold">{m.title}</div>
                     <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
-                    <DetailsRow movie={m} />
+                    <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
                     <TrailerButton movieId={m.id} />
                     <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                     <div className="flex gap-1 mt-2">
@@ -1220,7 +1276,7 @@ export default function Home() {
                   <div className="min-w-0 flex-1">
                     <div className="font-extrabold">{m.title}</div>
                     <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
-                    <DetailsRow movie={m} />
+                    <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
                     <TrailerButton movieId={m.id} />
                     <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                     <div className="flex gap-1 mt-2">
@@ -1246,7 +1302,7 @@ export default function Home() {
                   <div className="min-w-0 flex-1">
                     <div className="font-extrabold">{m.title}</div>
                     <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
-                    <DetailsRow movie={m} />
+                    <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
                     <TrailerButton movieId={m.id} />
                     <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                     <div className="flex gap-1 mt-2">
