@@ -100,6 +100,57 @@ function ProviderRow({ movieId, region }) {
   );
 }
 
+function FilterSortBar({ sort, setSort, genreFilter, setGenreFilter, castQuery, setCastQuery, sortOptions }) {
+  function toggleGenre(id) {
+    setGenreFilter(genreFilter.includes(id) ? genreFilter.filter((g) => g !== id) : [...genreFilter, id]);
+  }
+  return (
+    <div className="mb-4 space-y-2">
+      <div className="flex flex-wrap gap-2 items-center">
+        <span className="text-[11px] font-bold text-cinema-muted uppercase tracking-wide">Sort:</span>
+        <select
+          value={sort.key}
+          onChange={(e) => setSort({ ...sort, key: e.target.value })}
+          className="text-xs font-bold px-2 py-1 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50"
+        >
+          <option value="">Default</option>
+          {sortOptions.includes("year") && <option value="year">Release year</option>}
+          {sortOptions.includes("score") && <option value="score">User score</option>}
+          {sortOptions.includes("title") && <option value="title">Title A-Z</option>}
+        </select>
+        {sort.key && (
+          <button
+            onClick={() => setSort({ ...sort, dir: sort.dir === "asc" ? "desc" : "asc" })}
+            className="text-xs font-bold px-2 py-1 rounded-lg bg-cinema-panel border border-cinema-border text-cinema-mutedLight"
+          >
+            {sort.dir === "asc" ? "↑ Low to high" : "↓ High to low"}
+          </button>
+        )}
+      </div>
+      <input
+        value={castQuery}
+        onChange={(e) => setCastQuery(e.target.value)}
+        placeholder="Filter by cast member…"
+        className="w-full px-3 py-1.5 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 text-sm outline-none focus:border-cinema-gold"
+      />
+      <div className="flex flex-wrap gap-1.5">
+        {GENRES.map((g) => (
+          <button
+            key={g.id}
+            onClick={() => toggleGenre(g.id)}
+            className={
+              "text-[10px] font-bold px-2 py-1 rounded-full border " +
+              (genreFilter.includes(g.id) ? "bg-cinema-gold text-cinema-ink border-cinema-gold" : "border-cinema-border text-cinema-muted hover:border-cinema-gold")
+            }
+          >
+            {g.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SpotlightControl({ movieId, spotlight, myEmail, onToggle }) {
   const recommenders = spotlight.filter((s) => s.movieId === movieId);
   const mine = recommenders.some((s) => s.byEmail === myEmail);
@@ -135,9 +186,11 @@ function DetailsRow({ movie }) {
   }, [movie.id]);
 
   const rating = typeof movie.vote_average === "number" && movie.vote_average > 0 ? movie.vote_average.toFixed(1) : null;
+  const year = movie.release_date ? movie.release_date.slice(0, 4) : null;
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] font-bold text-cinema-mutedDark mt-1">
+      {year && <span>{year}</span>}
       {rating && (
         <span className="inline-flex items-center gap-1">
           <Star className="w-3 h-3 text-cinema-gold" fill="currentColor" /> {rating}/10
@@ -185,6 +238,16 @@ export default function Home() {
   const [votes, setVotes] = useState({});
   const [spotlight, setSpotlight] = useState([]);
   const [certifications, setCertifications] = useState({}); // movieId -> "PG-13" | "" (checked, none found)
+  const [detailsCache, setDetailsCache] = useState({}); // movieId -> { runtime, cast }
+
+  const [matchesSort, setMatchesSort] = useState({ key: "", dir: "desc" });
+  const [matchesGenreFilter, setMatchesGenreFilter] = useState([]);
+  const [matchesCastQuery, setMatchesCastQuery] = useState("");
+
+  const [historySort, setHistorySort] = useState({ key: "", dir: "desc" });
+  const [historyGenreFilter, setHistoryGenreFilter] = useState([]);
+  const [historyCastQuery, setHistoryCastQuery] = useState("");
+
   const [screen, setScreen] = useState("join");
   const [error, setError] = useState("");
   const [fetchingPool, setFetchingPool] = useState(false);
@@ -470,6 +533,66 @@ export default function Home() {
     return cert !== "" && ratingRank(cert) <= ratingRank(myMaxRating);
   }
 
+  function passesGenreFilter(movie, genreIds) {
+    if (!genreIds.length) return true;
+    return (movie.genre_ids || []).some((g) => genreIds.includes(g));
+  }
+
+  function passesCastFilter(movie, query) {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    const cast = detailsCache[movie.id]?.cast;
+    if (!cast) return false; // still loading — hide until we know, avoids false negatives
+    return cast.some((name) => name.toLowerCase().includes(q));
+  }
+
+  function sortMovies(list, sort) {
+    if (!sort.key) return list;
+    const arr = [...list];
+    arr.sort((a, b) => {
+      let av, bv;
+      if (sort.key === "year") {
+        av = a.release_date ? new Date(a.release_date).getTime() : 0;
+        bv = b.release_date ? new Date(b.release_date).getTime() : 0;
+      } else if (sort.key === "score") {
+        av = a.vote_average || 0;
+        bv = b.vote_average || 0;
+      } else if (sort.key === "title") {
+        av = a.title.toLowerCase();
+        bv = b.title.toLowerCase();
+      }
+      if (av < bv) return sort.dir === "asc" ? -1 : 1;
+      if (av > bv) return sort.dir === "asc" ? 1 : -1;
+      return 0;
+    });
+    return arr;
+  }
+
+  // fetch runtime/cast for a set of movies — used both for the cast filter
+  // and to feed DetailsRow without refetching per card
+  function useCastFetch(movies, query) {
+    useEffect(() => {
+      if (!query.trim()) return;
+      const pending = movies.filter((m) => detailsCache[m.id] === undefined).slice(0, 30);
+      if (!pending.length) return;
+      let cancelled = false;
+      (async () => {
+        for (const m of pending) {
+          if (cancelled) return;
+          try {
+            const res = await fetch(`/api/details?movieId=${m.id}`);
+            const data = await res.json();
+            if (!cancelled) setDetailsCache((prev) => ({ ...prev, [m.id]: data }));
+          } catch {
+            if (!cancelled) setDetailsCache((prev) => ({ ...prev, [m.id]: { runtime: null, cast: [] } }));
+          }
+        }
+      })();
+      return () => (cancelled = true);
+      // eslint-disable-next-line
+    }, [movies.length, query, detailsCache]);
+  }
+
   useEffect(() => {
     deck.slice(1, 4).forEach((m) => {
       if (!m.poster_path) return;
@@ -636,6 +759,37 @@ export default function Home() {
     }));
     // eslint-disable-next-line
   }, [pool, votes, members, myMaxRating, certifications]);
+
+  // for splitting "My Votes" yes list: is this a movie the WHOLE family said
+  // yes to, or one where at least one other member said no ("solo watch")?
+  const fullFamilyMatchIds = useMemo(() => {
+    const ids = new Set();
+    if (!pool || !members.length) return ids;
+    pool.movies.forEach((m) => {
+      if (members.every((mem) => (votes[m.id] || {})[mem.email] === "yes")) ids.add(m.id);
+    });
+    return ids;
+  }, [pool, votes, members]);
+
+  const myYesSearched = myYes.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase()));
+  const myYesFamilyMatches = myYesSearched.filter((m) => fullFamilyMatchIds.has(m.id));
+  const myYesSoloWatch = myYesSearched.filter((m) => !fullFamilyMatchIds.has(m.id));
+
+  useCastFetch(readyToWatch, matchesCastQuery);
+  useCastFetch(myYes, historyCastQuery);
+
+  const visibleMatches = sortMovies(
+    readyToWatch.filter((m) => passesGenreFilter(m, matchesGenreFilter) && passesCastFilter(m, matchesCastQuery)),
+    matchesSort
+  );
+  const visibleFamilyMatches = sortMovies(
+    myYesFamilyMatches.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery)),
+    historySort
+  );
+  const visibleSoloWatch = sortMovies(
+    myYesSoloWatch.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery)),
+    historySort
+  );
 
   if (status === "loading") {
     return <div className="min-h-screen flex items-center justify-center bg-cinema-bg text-cinema-gold" style={bodyFont}>Loading…</div>;
@@ -946,13 +1100,29 @@ export default function Home() {
               </div>
             )}
 
+            {readyToWatch.length > 0 && (
+              <FilterSortBar
+                sort={matchesSort}
+                setSort={setMatchesSort}
+                genreFilter={matchesGenreFilter}
+                setGenreFilter={setMatchesGenreFilter}
+                castQuery={matchesCastQuery}
+                setCastQuery={setMatchesCastQuery}
+                sortOptions={["year", "score", "title"]}
+              />
+            )}
+
             {readyToWatch.length === 0 && (
               <p className="text-cinema-muted text-sm text-center py-6">No shared picks yet with this group — keep swiping.</p>
             )}
 
-            {readyToWatch.length > 0 && (
+            {readyToWatch.length > 0 && visibleMatches.length === 0 && (
+              <p className="text-cinema-muted text-sm text-center py-6">Nothing matches those filters.</p>
+            )}
+
+            {visibleMatches.length > 0 && (
               <div className="space-y-3">
-                {readyToWatch.map((m) => (
+                {visibleMatches.map((m) => (
                   <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
                     {m.poster_path && (
                       <div className="relative flex-shrink-0">
@@ -1000,24 +1170,57 @@ export default function Home() {
               value={historySearch}
               onChange={(e) => setHistorySearch(e.target.value)}
               placeholder="Search your votes…"
-              className="w-full px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold mb-5"
+              className="w-full px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold mb-4"
             />
 
+            {myYes.length > 0 && (
+              <FilterSortBar
+                sort={historySort}
+                setSort={setHistorySort}
+                genreFilter={historyGenreFilter}
+                setGenreFilter={setHistoryGenreFilter}
+                castQuery={historyCastQuery}
+                setCastQuery={setHistoryCastQuery}
+                sortOptions={["year", "score", "title"]}
+              />
+            )}
+
             <div className="text-xs font-bold text-cinema-gold uppercase tracking-wide mb-2">
-              You said yes ({myYes.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase())).length})
+              Family matches ({visibleFamilyMatches.length})
             </div>
+            <p className="text-[11px] text-cinema-mutedDark mb-2">Everyone in the family said yes to these too.</p>
             <div className="space-y-3 mb-6">
-              {myYes.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase())).length === 0 && (
-                <p className="text-cinema-muted text-sm py-2">{historySearch.trim() ? "No matches." : "Nothing yet."}</p>
-              )}
-              {myYes
-                .filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase()))
-                .map((m) => (
+              {visibleFamilyMatches.length === 0 && <p className="text-cinema-muted text-sm py-2">Nothing here yet.</p>}
+              {visibleFamilyMatches.map((m) => (
+                <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-gold/40">
+                  {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
+                  <div className="min-w-0 flex-1">
+                    <div className="font-extrabold">{m.title}</div>
+                    <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
+                    <DetailsRow movie={m} />
+                    <TrailerButton movieId={m.id} />
+                    <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
+                    <div className="flex gap-1 mt-2">
+                      <button onClick={() => castVote(m.id, "no")} className="text-[11px] font-bold px-2 py-0.5 rounded-full border border-cinema-border text-cinema-muted hover:border-cinema-orange hover:text-cinema-orange">Change to no</button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="text-xs font-bold text-cinema-mutedDark uppercase tracking-wide mb-2">
+              Solo watch ({visibleSoloWatch.length})
+            </div>
+            <p className="text-[11px] text-cinema-mutedDark mb-2">You said yes, but at least one other family member hasn't — these are ones to watch on your own.</p>
+            <div className="space-y-3 mb-6">
+              {visibleSoloWatch.length === 0 && <p className="text-cinema-muted text-sm py-2">Nothing here yet.</p>}
+              {visibleSoloWatch.map((m) => (
                 <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
                   {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
                   <div className="min-w-0 flex-1">
                     <div className="font-extrabold">{m.title}</div>
                     <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
+                    <DetailsRow movie={m} />
                     <TrailerButton movieId={m.id} />
                     <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                     <div className="flex gap-1 mt-2">
@@ -1043,6 +1246,7 @@ export default function Home() {
                   <div className="min-w-0 flex-1">
                     <div className="font-extrabold">{m.title}</div>
                     <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
+                    <DetailsRow movie={m} />
                     <TrailerButton movieId={m.id} />
                     <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                     <div className="flex gap-1 mt-2">
