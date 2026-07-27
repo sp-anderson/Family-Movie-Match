@@ -10,12 +10,16 @@ export async function GET(request) {
   if (!key) return NextResponse.json({ error: "TMDB_API_KEY is not set" }, { status: 500 });
 
   const res = await fetch(
-    `https://api.themoviedb.org/3/movie/${encodeURIComponent(movieId)}?api_key=${encodeURIComponent(key)}&append_to_response=credits`
+    `https://api.themoviedb.org/3/movie/${encodeURIComponent(movieId)}?api_key=${encodeURIComponent(key)}&append_to_response=credits,release_dates`
   );
   const data = await res.json();
+
+  const usReleases = data.release_dates?.results?.find((r) => r.iso_3166_1 === "US");
+  const certification = (usReleases?.release_dates || []).map((r) => r.certification).find((c) => c) || null;
 
   return NextResponse.json({
     runtime: data.runtime || null,
     cast: (data.credits?.cast || []).slice(0, 4).map((c) => c.name),
+    certification,
   });
 }

@@ -14,6 +14,12 @@ const SERVICES = [
   { id: 1899, name: "Max" },
 ];
 
+const RATINGS = ["G", "PG", "PG-13", "R", "NC-17"];
+function ratingRank(cert) {
+  const i = RATINGS.indexOf(cert);
+  return i === -1 ? 99 : i; // unknown/unrated certifications rank as most restrictive
+}
+
 const GENRES = [
   { id: 28, name: "Action" },
   { id: 12, name: "Adventure" },
@@ -178,6 +184,7 @@ export default function Home() {
   const [pool, setPool] = useState(null);
   const [votes, setVotes] = useState({});
   const [spotlight, setSpotlight] = useState([]);
+  const [certifications, setCertifications] = useState({}); // movieId -> "PG-13" | "" (checked, none found)
   const [screen, setScreen] = useState("join");
   const [error, setError] = useState("");
   const [fetchingPool, setFetchingPool] = useState(false);
@@ -255,6 +262,10 @@ export default function Home() {
       body: JSON.stringify({ email, profile: merged }),
     });
     return merged;
+  }
+
+  async function setChildMaxRating(member, rating) {
+    await saveMember(profile.group, { ...member, maxRating: rating || null });
   }
 
   async function saveMember(group, memberObj) {
@@ -403,6 +414,30 @@ export default function Home() {
     setFetchingPool(false);
   }
 
+  const myMember = members.find((m) => m.email === email);
+  const myMaxRating = myMember && myMember.role === "child" ? myMember.maxRating : null;
+
+  useEffect(() => {
+    if (!myMaxRating || !pool) return;
+    const pending = pool.movies.filter((m) => certifications[m.id] === undefined).slice(0, 30);
+    if (!pending.length) return;
+    let cancelled = false;
+    (async () => {
+      for (const m of pending) {
+        if (cancelled) return;
+        try {
+          const res = await fetch(`/api/certification?movieId=${m.id}`);
+          const data = await res.json();
+          if (!cancelled) setCertifications((prev) => ({ ...prev, [m.id]: data.certification || "" }));
+        } catch {
+          if (!cancelled) setCertifications((prev) => ({ ...prev, [m.id]: "" }));
+        }
+      }
+    })();
+    return () => (cancelled = true);
+    // eslint-disable-next-line
+  }, [pool, myMaxRating, certifications]);
+
   const myVotedIds = useMemo(() => {
     const ids = new Set();
     Object.entries(votes).forEach(([mid, byEmail]) => {
@@ -411,8 +446,29 @@ export default function Home() {
     return ids;
   }, [votes, email]);
 
-  const deck = useMemo(() => (pool ? pool.movies.filter((m) => !myVotedIds.has(m.id)) : []), [pool, myVotedIds]);
+  const deck = useMemo(() => {
+    if (!pool) return [];
+    let movies = pool.movies.filter((m) => !myVotedIds.has(m.id));
+    if (myMaxRating) {
+      const maxRank = ratingRank(myMaxRating);
+      movies = movies.filter((m) => {
+        const cert = certifications[m.id];
+        if (cert === undefined) return false; // still checking — don't show until we know
+        return cert !== "" && ratingRank(cert) <= maxRank;
+      });
+    }
+    return movies;
+  }, [pool, myVotedIds, myMaxRating, certifications]);
   const currentMovie = deck[0];
+
+  const ratingCheckPending = myMaxRating && pool ? pool.movies.some((m) => certifications[m.id] === undefined) : false;
+
+  function passesRatingFilter(movie) {
+    if (!myMaxRating) return true;
+    const cert = certifications[movie.id];
+    if (cert === undefined) return false; // not yet checked — keep hidden until we know
+    return cert !== "" && ratingRank(cert) <= ratingRank(myMaxRating);
+  }
 
   useEffect(() => {
     deck.slice(1, 4).forEach((m) => {
@@ -553,9 +609,9 @@ export default function Home() {
 
   const readyToWatch = useMemo(() => {
     if (!pool || !consideredMembers.length) return [];
-    return pool.movies.filter((m) => votesFor(m).every((v) => v === "yes"));
+    return pool.movies.filter((m) => votesFor(m).every((v) => v === "yes") && passesRatingFilter(m));
     // eslint-disable-next-line
-  }, [pool, votes, members, matchWith, email]);
+  }, [pool, votes, members, matchWith, email, myMaxRating, certifications]);
 
   const myWatched = useMemo(() => {
     if (!pool || !email) return [];
@@ -576,10 +632,10 @@ export default function Home() {
     if (!pool) return [];
     return otherMembers.map((m) => ({
       member: m,
-      movies: pool.movies.filter((mv) => (votes[mv.id] || {})[m.email] === "yes"),
+      movies: pool.movies.filter((mv) => (votes[mv.id] || {})[m.email] === "yes" && passesRatingFilter(mv)),
     }));
     // eslint-disable-next-line
-  }, [pool, votes, members]);
+  }, [pool, votes, members, myMaxRating, certifications]);
 
   if (status === "loading") {
     return <div className="min-h-screen flex items-center justify-center bg-cinema-bg text-cinema-gold" style={bodyFont}>Loading…</div>;
@@ -758,12 +814,22 @@ export default function Home() {
 
         {screen === "swipe" && profile?.group && (
           <div className="max-w-sm mx-auto">
+            {myMaxRating && (
+              <div className="text-center text-[11px] font-bold text-cinema-gold mb-2">
+                Showing movies rated {myMaxRating} and under
+              </div>
+            )}
             {!pool && (
               <div className="text-center py-10">
                 <p className="text-cinema-muted mb-4 text-sm">No movie list yet for this group. Pull one in based on everyone's services and genres.</p>
                 <button onClick={fetchPool} disabled={fetchingPool} className="px-5 py-2.5 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight disabled:opacity-50 inline-flex items-center gap-2">
                   <RefreshCw className={"w-4 h-4 " + (fetchingPool ? "animate-spin" : "")} /> {fetchingPool ? "Fetching…" : "Find movies for us"}
                 </button>
+              </div>
+            )}
+            {pool && !currentMovie && ratingCheckPending && (
+              <div className="text-center py-10">
+                <p className="text-cinema-muted text-sm">Checking ratings on a few more titles…</p>
               </div>
             )}
             {pool && currentMovie && (
@@ -848,7 +914,7 @@ export default function Home() {
                 </div>
               </div>
             )}
-            {pool && !currentMovie && (
+            {pool && !currentMovie && !ratingCheckPending && (
               <div className="text-center py-10">
                 <p className="text-cinema-muted mb-4 text-sm">You've swiped through the whole stack. Check Matches, or pull a fresh batch.</p>
                 <button onClick={fetchPool} disabled={fetchingPool} className="px-5 py-2.5 rounded-lg bg-cinema-panel text-stone-50 font-bold hover:bg-cinema-border inline-flex items-center gap-2">
@@ -999,6 +1065,7 @@ export default function Home() {
                   {Array.from(new Set(spotlight.map((s) => s.movieId)))
                     .map((mid) => (pool ? pool.movies.find((m) => m.id === mid) : null))
                     .filter(Boolean)
+                    .filter(passesRatingFilter)
                     .map((m) => {
                       const myVote = (votes[m.id] || {})[email];
                       return (
@@ -1071,6 +1138,27 @@ export default function Home() {
                 <div className="flex flex-wrap gap-1 mb-1">{(m.services || []).map((sid) => <span key={sid} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{SERVICES.find((s) => s.id === sid)?.name}</span>)}</div>
                 <div className="flex flex-wrap gap-1 mb-1">{(m.genres || []).map((gid) => <span key={gid} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-gold/20 text-cinema-gold font-bold">{GENRES.find((g) => g.id === gid)?.name}</span>)}</div>
                 {m.favorites?.length > 0 && <div className="text-xs text-cinema-muted mt-1">Favorites: {m.favorites.join(", ")}</div>}
+                {m.role === "child" && (
+                  <div className="mt-2 pt-2 border-t border-cinema-border">
+                    {myMember?.role === "parent" ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-cinema-muted">Max rating:</span>
+                        <select
+                          value={m.maxRating || ""}
+                          onChange={(e) => setChildMaxRating(m, e.target.value)}
+                          className="text-xs font-bold px-2 py-1 rounded-lg bg-cinema-bg border border-cinema-border text-stone-50"
+                        >
+                          <option value="">No limit</option>
+                          {RATINGS.map((r) => <option key={r} value={r}>{r}</option>)}
+                        </select>
+                      </div>
+                    ) : (
+                      <span className="text-xs font-bold text-cinema-muted">
+                        Max rating: {m.maxRating || "No limit"}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
