@@ -856,7 +856,7 @@ export default function Home() {
     if (nudgeRecommenders(movie.id).length > 0) {
       setReconsidered((prev) => new Set(prev).add(movie.id));
     }
-    if (choice === "yes" && members.length > 0) {
+    if (choice === "yes" && members.length > 1) {
       const updatedVotesForMovie = { ...(votes[movie.id] || {}), [email]: "yes" };
       const isFullMatch = members.every((m) => updatedVotesForMovie[m.email] === "yes");
       if (isFullMatch) setCelebration(movie);
