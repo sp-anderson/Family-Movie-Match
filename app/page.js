@@ -253,6 +253,15 @@ export default function Home() {
   const [votes, setVotes] = useState({});
   const [spotlight, setSpotlight] = useState([]);
   const [certifications, setCertifications] = useState({}); // movieId -> "PG-13" | "" (checked, none found)
+
+  const [activeRoomCode, setActiveRoomCode] = useState(null); // which group/room the app is currently operating on
+  const [roomMeta, setRoomMeta] = useState(null); // { type: "family"|"movie-night", createdAt, expiresAt, createdBy }
+  const [familyMembers, setFamilyMembers] = useState([]); // the PERMANENT family's members — used for rating-restriction safety regardless of active room
+  const [showNightPanel, setShowNightPanel] = useState(false);
+  const [nightJoinInput, setNightJoinInput] = useState("");
+  const [nightError, setNightError] = useState("");
+  const [nightBusy, setNightBusy] = useState(false);
+  const [instantMatches, setInstantMatches] = useState([]); // movies both people in a movie-night already said yes to, historically
   const [detailsCache, setDetailsCache] = useState({}); // movieId -> { runtime, cast }
 
   const [matchesSort, setMatchesSort] = useState({ key: "", dir: "desc" });
@@ -312,7 +321,28 @@ export default function Home() {
         setServicesInput(data.profile.services || []);
         setGenresInput(data.profile.genres || []);
         setFavorites(data.profile.favorites || []);
-        await loadGroup(data.profile.group);
+
+        const familyData = await loadGroup(data.profile.group);
+        setFamilyMembers((familyData && familyData.members) || []);
+
+        const roomCode = data.profile.currentRoom || data.profile.group;
+        if (roomCode === data.profile.group) {
+          setActiveRoomCode(data.profile.group);
+          setRoomMeta({ type: "family" });
+        } else {
+          const roomRes = await fetch(`/api/room?code=${encodeURIComponent(roomCode)}`);
+          const roomData = await roomRes.json();
+          if (roomData.meta && (!roomData.meta.expiresAt || roomData.meta.expiresAt > Date.now())) {
+            setActiveRoomCode(roomCode);
+            setRoomMeta(roomData.meta);
+            await loadGroup(roomCode);
+          } else {
+            // room expired or vanished — fall back to the permanent family
+            setActiveRoomCode(data.profile.group);
+            setRoomMeta({ type: "family" });
+          }
+        }
+
         setScreen(data.profile.services?.length && data.profile.genres?.length ? "swipe" : "setup");
       } else {
         setScreen("join");
@@ -343,6 +373,116 @@ export default function Home() {
     return merged;
   }
 
+  async function checkInstantMatches(code) {
+    const data = await loadGroup(code);
+    const roomMembers = (data && data.members) || [];
+    if (roomMembers.length < 2) {
+      setInstantMatches([]);
+      return;
+    }
+    try {
+      const votesByEmail = await Promise.all(
+        roomMembers.map((m) => fetch(`/api/uservotes?email=${encodeURIComponent(m.email)}`).then((r) => r.json()))
+      );
+      const [first, ...rest] = votesByEmail.map((v) => v.votes || {});
+      const sharedIds = Object.keys(first).filter((mid) => first[mid] === "yes" && rest.every((v) => v[mid] === "yes"));
+      if (!sharedIds.length) {
+        setInstantMatches([]);
+        return;
+      }
+      const movies = await Promise.all(
+        sharedIds.map((mid) => fetch(`/api/movie?movieId=${mid}`).then((r) => r.json()).catch(() => null))
+      );
+      setInstantMatches(movies.filter(Boolean));
+    } catch {
+      setInstantMatches([]);
+    }
+  }
+
+  async function startMovieNight() {
+    setNightError("");
+    setNightBusy(true);
+    try {
+      const code = "MN-" + Math.random().toString(36).slice(2, 7).toUpperCase();
+      const res = await fetch("/api/room", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, action: "create", email }),
+      });
+      const data = await res.json();
+      await saveProfile({ currentRoom: code });
+      setActiveRoomCode(code);
+      setRoomMeta(data.meta);
+      await checkInstantMatches(code);
+      setShowNightPanel(false);
+      setScreen("setup");
+      setServicesInput(profile?.services || []);
+      setGenresInput(profile?.genres || []);
+      setFavorites(profile?.favorites || []);
+    } catch {
+      setNightError("Couldn't start a Movie Night — try again.");
+    }
+    setNightBusy(false);
+  }
+
+  async function joinMovieNight() {
+    setNightError("");
+    const code = nightJoinInput.trim().toUpperCase();
+    if (!code) return setNightError("Enter a Movie Night code.");
+    setNightBusy(true);
+    try {
+      const res = await fetch(`/api/room?code=${encodeURIComponent(code)}`);
+      const data = await res.json();
+      if (!data.meta) {
+        setNightError("No Movie Night found with that code.");
+        setNightBusy(false);
+        return;
+      }
+      if (data.meta.expiresAt && data.meta.expiresAt < Date.now()) {
+        setNightError("That Movie Night has expired.");
+        setNightBusy(false);
+        return;
+      }
+      await saveProfile({ currentRoom: code });
+      setActiveRoomCode(code);
+      setRoomMeta(data.meta);
+      await checkInstantMatches(code);
+      setShowNightPanel(false);
+      setServicesInput(profile?.services || []);
+      setGenresInput(profile?.genres || []);
+      setFavorites(profile?.favorites || []);
+      setScreen("setup");
+    } catch {
+      setNightError("Couldn't join that Movie Night — try again.");
+    }
+    setNightBusy(false);
+  }
+
+  async function exitMovieNight() {
+    await saveProfile({ currentRoom: null });
+    setActiveRoomCode(profile.group);
+    setRoomMeta({ type: "family" });
+    setInstantMatches([]);
+    await loadGroup(profile.group);
+    setRegionInput(profile.region || "CA");
+    setRoleInput(profile.role || "child");
+    setServicesInput(profile.services || []);
+    setGenresInput(profile.genres || []);
+    setFavorites(profile.favorites || []);
+    setShowNightPanel(false);
+    setScreen("swipe");
+  }
+
+  async function convertRoomToPermanent() {
+    const res = await fetch("/api/room", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: activeRoomCode, action: "convert", email }),
+    });
+    const data = await res.json();
+    setRoomMeta(data.meta);
+  }
+
   async function setChildMaxRating(member, rating) {
     await saveMember(profile.group, { ...member, maxRating: rating || null });
   }
@@ -367,6 +507,9 @@ export default function Home() {
     if (!group) return setError("Enter a family group code.");
     const merged = await saveProfile({ group });
     const data = await loadGroup(group);
+    setFamilyMembers((data && data.members) || []);
+    setActiveRoomCode(group);
+    setRoomMeta({ type: "family" });
     if (data && (data.members || []).length === 0) {
       setRoleInput("parent"); // first person in a brand-new family — needs to be able to set up parental controls
     }
@@ -417,17 +560,36 @@ export default function Home() {
     setError("");
     if (!servicesInput.length) return setError("Pick at least one streaming service.");
     if (!genresInput.length) return setError("Pick at least one genre you're into.");
-    const existingSelf = members.find((m) => m.email === email);
-    const otherParentsExist = members.some((m) => m.role === "parent" && m.email !== email);
-    const iAmAlreadyParent = existingSelf?.role === "parent";
-    const roleLocked = otherParentsExist && !iAmAlreadyParent;
-    const finalRole = roleLocked ? "child" : roleInput;
-    if (roleLocked && roleInput === "parent") {
-      setError("This family already has a parent — ask them to promote you from the Family tab.");
-      return;
+
+    const inOwnFamily = activeRoomCode === profile.group;
+
+    if (inOwnFamily) {
+      const existingSelf = members.find((m) => m.email === email);
+      const otherParentsExist = members.some((m) => m.role === "parent" && m.email !== email);
+      const iAmAlreadyParent = existingSelf?.role === "parent";
+      const roleLocked = otherParentsExist && !iAmAlreadyParent;
+      const finalRole = roleLocked ? "child" : roleInput;
+      if (roleLocked && roleInput === "parent") {
+        setError("This family already has a parent — ask them to promote you from the Family tab.");
+        return;
+      }
+      await saveProfile({ region: regionInput, role: finalRole, services: servicesInput, genres: genresInput, favorites });
+      await saveMember(activeRoomCode, { name: displayName, email, role: finalRole, services: servicesInput, genres: genresInput, favorites });
+      setFamilyMembers((prev) => {
+        const rec = { name: displayName, email, role: finalRole, services: servicesInput, genres: genresInput, favorites };
+        const idx = prev.findIndex((m) => m.email === email);
+        if (idx >= 0) {
+          const copy = [...prev];
+          copy[idx] = rec;
+          return copy;
+        }
+        return [...prev, rec];
+      });
+    } else {
+      // temporary Movie Night room — just this room's member record, permanent profile untouched
+      await saveMember(activeRoomCode, { name: displayName, email, services: servicesInput, genres: genresInput, favorites });
+      await checkInstantMatches(activeRoomCode);
     }
-    const merged = await saveProfile({ region: regionInput, role: finalRole, services: servicesInput, genres: genresInput, favorites });
-    await saveMember(merged.group, { name: displayName, email, role: finalRole, services: servicesInput, genres: genresInput, favorites });
     setScreen("swipe");
   }
 
@@ -438,7 +600,7 @@ export default function Home() {
     try {
       // re-fetch the latest shared pool first, so we merge onto whatever
       // teammates have already added rather than clobbering it
-      const latest = await fetch(`/api/group?code=${encodeURIComponent(profile.group)}`).then((r) => r.json());
+      const latest = await fetch(`/api/group?code=${encodeURIComponent(activeRoomCode)}`).then((r) => r.json());
       const existingMovies = (latest.pool && latest.pool.movies) || [];
       const allServiceIds = Array.from(new Set(members.flatMap((m) => m.services || []).concat(profile.services || [])));
       const allGenreIds = Array.from(new Set(members.flatMap((m) => m.genres || []).concat(profile.genres || [])));
@@ -499,7 +661,7 @@ export default function Home() {
       await fetch("/api/group", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: profile.group, type: "pool", payload: newPool }),
+        body: JSON.stringify({ code: activeRoomCode, type: "pool", payload: newPool }),
       });
       setPool(newPool);
       if (fetched.length === 0 && existingMovies.length === 0) {
@@ -513,8 +675,9 @@ export default function Home() {
     setFetchingPool(false);
   }
 
-  const myMember = members.find((m) => m.email === email);
-  const myMaxRating = myMember && myMember.role === "child" ? myMember.maxRating : null;
+  const myMember = members.find((m) => m.email === email); // active room's record (for room-scoped role UI)
+  const myFamilyMember = familyMembers.find((m) => m.email === email); // permanent family record — source of truth for safety
+  const myMaxRating = myFamilyMember && myFamilyMember.role === "child" ? myFamilyMember.maxRating : null;
   const roleLockedForMe = members.some((m) => m.role === "parent" && m.email !== email) && myMember?.role !== "parent";
 
   useEffect(() => {
@@ -663,7 +826,7 @@ export default function Home() {
       const res = await fetch("/api/group", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: profile.group, type: "vote", payload: { movieId, name: email, choice } }),
+        body: JSON.stringify({ code: activeRoomCode, type: "vote", payload: { movieId, name: email, choice } }),
       });
       const data = await res.json();
       setVotes(data.votes || {});
@@ -681,7 +844,7 @@ export default function Home() {
     const res = await fetch("/api/group", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: profile.group, type: "spotlight", payload: { movieId, byEmail: email, byName: displayName, action } }),
+      body: JSON.stringify({ code: activeRoomCode, type: "spotlight", payload: { movieId, byEmail: email, byName: displayName, action } }),
     });
     const data = await res.json();
     setSpotlight(data.spotlight || []);
@@ -885,6 +1048,13 @@ export default function Home() {
     );
   }
 
+  useEffect(() => {
+    if (roomMeta?.type === "movie-night" && activeRoomCode) {
+      checkInstantMatches(activeRoomCode);
+    }
+    // eslint-disable-next-line
+  }, [members.length, roomMeta?.type, activeRoomCode]);
+
   if (status === "loading") {
     return <div className="min-h-screen flex items-center justify-center bg-cinema-bg text-cinema-gold" style={bodyFont}>Loading…</div>;
   }
@@ -938,10 +1108,73 @@ export default function Home() {
           <span className="text-2xl text-cinema-gold" style={displayFont}>Family Movie Match</span>
         </div>
         <div className="flex items-center gap-3">
-          {profile?.group && <span className="text-xs text-cinema-muted font-bold hidden sm:inline">Family {profile.group}</span>}
+          {profile?.group && roomMeta && (
+            <span className="text-xs text-cinema-muted font-bold hidden sm:inline">
+              {roomMeta.type === "movie-night" ? `🎬 Movie Night ${activeRoomCode}` : `Family ${profile.group}`}
+            </span>
+          )}
+          {profile?.group && (
+            <button
+              onClick={() => setShowNightPanel((s) => !s)}
+              className="text-xs font-bold px-2 py-1 rounded-lg bg-cinema-panel border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold"
+            >
+              🎬 Movie Night
+            </button>
+          )}
           <button onClick={() => signOut()} className="text-cinema-muted hover:text-cinema-gold" title="Sign out"><LogOut className="w-4 h-4" /></button>
         </div>
       </div>
+
+      {showNightPanel && (
+        <div className="px-5 py-4 bg-cinema-panel border-b border-cinema-border">
+          {nightError && <div className="mb-3 px-3 py-2 rounded-lg bg-cinema-orange/15 border border-cinema-orange text-cinema-orangeLight text-sm">{nightError}</div>}
+
+          {roomMeta?.type === "movie-night" ? (
+            <div>
+              <div className="text-sm font-bold text-cinema-gold mb-1">🎬 Movie Night — code {activeRoomCode}</div>
+              <div className="text-xs text-cinema-muted mb-3">
+                {roomMeta.expiresAt
+                  ? `Expires ${new Date(roomMeta.expiresAt).toLocaleDateString()}`
+                  : "Made permanent — this is now a real family."}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={exitMovieNight} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold">
+                  ← Back to my family
+                </button>
+                {roomMeta.expiresAt && (
+                  <button onClick={convertRoomToPermanent} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-cinema-gold text-cinema-ink hover:bg-cinema-goldLight">
+                    Make this permanent
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="max-w-sm">
+              <p className="text-xs text-cinema-muted mb-3">
+                Swipe with a friend outside your family, without touching your real family's data. Lasts up to a week unless you make it permanent.
+              </p>
+              <button
+                onClick={startMovieNight}
+                disabled={nightBusy}
+                className="w-full mb-3 py-2 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight disabled:opacity-50"
+              >
+                Start a Movie Night
+              </button>
+              <div className="flex gap-2">
+                <input
+                  value={nightJoinInput}
+                  onChange={(e) => setNightJoinInput(e.target.value.toUpperCase())}
+                  placeholder="Have a code? Join one"
+                  className="flex-1 px-3 py-2 rounded-lg bg-cinema-bg border border-cinema-border text-stone-50 text-sm outline-none focus:border-cinema-gold"
+                />
+                <button onClick={joinMovieNight} disabled={nightBusy} className="px-3 py-2 rounded-lg bg-cinema-border text-cinema-mutedLight text-xs font-bold disabled:opacity-50">
+                  Join
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {profile?.group && screen !== "join" && (
         <div className="flex gap-1 px-5 pt-3 overflow-x-auto">
@@ -983,24 +1216,28 @@ export default function Home() {
 
         {screen === "setup" && profile?.group && (
           <div className="max-w-lg mx-auto pb-6">
-            <h2 className="text-xl text-cinema-gold mb-4" style={displayFont}>Your streaming setup</h2>
-            <div className="mb-5">
-              <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Your role in this family</div>
-              <div className="flex gap-2">
-                <Chip
-                  active={roleInput === "parent"}
-                  onClick={() => !roleLockedForMe && setRoleInput("parent")}
-                >
-                  Parent{roleLockedForMe ? " 🔒" : ""}
-                </Chip>
-                <Chip active={roleInput === "child"} onClick={() => setRoleInput("child")}>Child</Chip>
+            <h2 className="text-xl text-cinema-gold mb-4" style={displayFont}>
+              {roomMeta?.type === "movie-night" ? "Set up for this Movie Night" : "Your streaming setup"}
+            </h2>
+            {roomMeta?.type !== "movie-night" && (
+              <div className="mb-5">
+                <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Your role in this family</div>
+                <div className="flex gap-2">
+                  <Chip
+                    active={roleInput === "parent"}
+                    onClick={() => !roleLockedForMe && setRoleInput("parent")}
+                  >
+                    Parent{roleLockedForMe ? " 🔒" : ""}
+                  </Chip>
+                  <Chip active={roleInput === "child"} onClick={() => setRoleInput("child")}>Child</Chip>
+                </div>
+                {roleLockedForMe && (
+                  <p className="text-[11px] text-cinema-mutedDark mt-1">
+                    This family already has a parent — ask them to promote you from the Family tab.
+                  </p>
+                )}
               </div>
-              {roleLockedForMe && (
-                <p className="text-[11px] text-cinema-mutedDark mt-1">
-                  This family already has a parent — ask them to promote you from the Family tab.
-                </p>
-              )}
-            </div>
+            )}
             <div className="mb-5">
               <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Region</div>
               <div className="flex gap-2">
@@ -1195,6 +1432,20 @@ export default function Home() {
               <div className="text-center text-2xl text-cinema-gold" style={displayFont}>Match Marquee</div>
               <div className="flex justify-center gap-2 mt-2">{Array.from({ length: 10 }).map((_, i) => <span key={i} className="w-1.5 h-1.5 rounded-full bg-cinema-gold" />)}</div>
             </div>
+
+            {roomMeta?.type === "movie-night" && instantMatches.length > 0 && (
+              <div className="mb-6">
+                <div className="text-xs font-bold text-cinema-gold uppercase tracking-wide mb-2">
+                  Already agree — no swiping needed
+                </div>
+                <p className="text-[11px] text-cinema-mutedDark mb-2">
+                  You've both already said yes to these before, in any family or Movie Night.
+                </p>
+                <div className="space-y-3">
+                  {instantMatches.filter(passesRatingFilter).map(renderMatchCard)}
+                </div>
+              </div>
+            )}
 
             {otherMembers.length > 0 && (
               <div className="mb-5">
@@ -1442,7 +1693,7 @@ export default function Home() {
 
         {screen === "group" && (
           <div className="max-w-lg mx-auto space-y-3">
-            <p className="text-xs text-cinema-mutedDark mb-2">Share code <span className="text-cinema-gold font-bold">{profile?.group}</span> with anyone else who should join.</p>
+            <p className="text-xs text-cinema-mutedDark mb-2">Share code <span className="text-cinema-gold font-bold">{activeRoomCode}</span> with anyone else who should join.</p>
             {members.map((m) => (
               <div key={m.email} className="bg-cinema-panel rounded-xl p-3 border border-cinema-border">
                 <div className="flex items-center gap-2 mb-2">
