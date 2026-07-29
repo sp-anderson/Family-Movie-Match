@@ -1715,7 +1715,7 @@ export default function Home() {
                     <div className="font-extrabold text-lg leading-snug">{currentMovie.title}</div>
                     {currentMovieNudges.length > 0 && (
                       <div className="text-xs text-cinema-gold font-bold mb-1">
-                        👀 {currentMovieNudges.map((n) => n.byName).join(", ")} want{currentMovieNudges.length === 1 ? "s" : ""} to watch this
+                        {currentMovieNudges.map((n) => n.byName).join(", ")} want{currentMovieNudges.length === 1 ? "s" : ""} to watch this
                       </div>
                     )}
                     {currentMovie._because && (
@@ -2064,6 +2064,7 @@ export default function Home() {
                     .map((mid) => (pool ? pool.movies.find((m) => m.id === mid) : null))
                     .filter(Boolean)
                     .filter(passesRatingFilter)
+                    .filter((m) => !(votes[m.id] || {})[email]) // resolved for you once you've cast any vote — still shows for others who haven't decided
                     .map((m) => {
                       const myVote = (votes[m.id] || {})[email];
                       return (
