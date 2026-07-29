@@ -1140,7 +1140,7 @@ export default function Home() {
   // yes to, or one where at least one other member said no ("solo watch")?
   const fullFamilyMatchIds = useMemo(() => {
     const ids = new Set();
-    if (!pool || !members.length) return ids;
+    if (!pool || members.length < 2) return ids;
     pool.movies.forEach((m) => {
       if (members.every((mem) => (votes[m.id] || {})[mem.email] === "yes")) ids.add(m.id);
     });
