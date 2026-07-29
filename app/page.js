@@ -343,6 +343,7 @@ export default function Home() {
   const [favSuggestions, setFavSuggestions] = useState([]);
   const [favSearching, setFavSearching] = useState(false);
   const [historySearch, setHistorySearch] = useState("");
+  const [historyStatusFilter, setHistoryStatusFilter] = useState("all"); // all | yes | no | seen | review-later
 
   const cardRef = useRef(null);
   const draggingRef = useRef(false);
@@ -808,6 +809,19 @@ export default function Home() {
     return (movie.genre_ids || []).some((g) => genreIds.includes(g));
   }
 
+  function splitByGenreMatch(movies, genreFilter) {
+    if (!genreFilter.length) return { all: movies, some: [] };
+    const all = [];
+    const some = [];
+    for (const m of movies) {
+      const ids = m.genre_ids || [];
+      const matched = genreFilter.filter((g) => ids.includes(g)).length;
+      if (matched === genreFilter.length) all.push(m);
+      else if (matched > 0) some.push(m);
+    }
+    return { all, some };
+  }
+
   function passesCastFilter(movie, query) {
     const q = query.trim().toLowerCase();
     if (!q) return true;
@@ -1055,22 +1069,48 @@ export default function Home() {
   const mySoloSearched = myYes.filter((m) => !fullFamilyMatchIds.has(m.id) && m.title.toLowerCase().includes(soloSearch.trim().toLowerCase()));
 
   useCastFetch(readyToWatch, matchesCastQuery);
-  useCastFetch(myWatched, historyCastQuery);
   useCastFetch(myYes, soloCastQuery);
 
   const visibleMatches = sortMovies(
     readyToWatch.filter((m) => passesGenreFilter(m, matchesGenreFilter) && passesCastFilter(m, matchesCastQuery)),
     matchesSort
   );
+  const { all: visibleMatchesAll, some: visibleMatchesSome } = splitByGenreMatch(visibleMatches, matchesGenreFilter);
+
   const visibleSoloWatch = sortMovies(
     mySoloSearched.filter((m) => passesGenreFilter(m, soloGenreFilter) && passesCastFilter(m, soloCastQuery)),
     soloSort
   );
+  const { all: visibleSoloAll, some: visibleSoloSome } = splitByGenreMatch(visibleSoloWatch, soloGenreFilter);
+
   const mySeenSearched = myWatched.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase()));
   const visibleSeen = sortMovies(
     mySeenSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery)),
     historySort
   );
+
+  const myYesInVotesSearched = myYes.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase()));
+  const visibleYesInVotes = sortMovies(
+    myYesInVotesSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery)),
+    historySort
+  );
+
+  const myNoInVotesSearched = myNo.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase()));
+  const visibleNoInVotes = sortMovies(
+    myNoInVotesSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery)),
+    historySort
+  );
+
+  const reviewLaterMovies = pool
+    ? skippedOrder.map((id) => pool.movies.find((m) => m.id === id)).filter(Boolean).filter((m) => !(votes[m.id] || {})[email])
+    : [];
+  const reviewLaterSearched = reviewLaterMovies.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase()));
+  const visibleReviewLater = sortMovies(
+    reviewLaterSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery)),
+    historySort
+  );
+
+  useCastFetch(myWatched.concat(myYes).concat(myNo).concat(reviewLaterMovies), historyCastQuery);
 
   function matchesFor(emailList) {
     if (!pool) return [];
@@ -1102,6 +1142,24 @@ export default function Home() {
           <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
           <ProviderRow movieId={m.id} region={profile?.region} />
           <TrailerButton movieId={m.id} />
+        </div>
+      </div>
+    );
+  }
+
+  function renderSoloCard(m) {
+    return (
+      <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
+        {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
+        <div className="min-w-0 flex-1">
+          <div className="font-extrabold">{m.title}</div>
+          <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
+          <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
+          <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
+          <ProviderRow movieId={m.id} region={profile?.region} />
+          <TrailerButton movieId={m.id} />
+          <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
+          <VoteSwitcher current="yes" onSet={(choice) => castVote(m.id, choice)} />
         </div>
       </div>
     );
@@ -1504,7 +1562,7 @@ export default function Home() {
 
             {roomMeta?.type === "movie-night" && instantMatches.length > 0 && (
               <div className="mb-6">
-                <div className="text-xs font-bold text-cinema-gold uppercase tracking-wide mb-2">
+                <div className="text-sm font-bold text-cinema-gold uppercase tracking-wide mb-2">
                   Already agree — no swiping needed
                 </div>
                 <p className="text-[11px] text-cinema-mutedDark mb-2">
@@ -1553,21 +1611,33 @@ export default function Home() {
               <p className="text-cinema-muted text-sm text-center py-6">Nothing matches those filters.</p>
             )}
 
-            {visibleMatches.length > 0 && (
+            {visibleMatchesAll.length > 0 && (
               <div className="space-y-3">
-                {visibleMatches.map(renderMatchCard)}
+                {visibleMatchesAll.map(renderMatchCard)}
+              </div>
+            )}
+
+            {visibleMatchesSome.length > 0 && (
+              <div className="mt-6">
+                <div className="text-sm font-bold text-cinema-gold uppercase tracking-wide mb-2">
+                  Partial genre matches
+                </div>
+                <p className="text-[11px] text-cinema-mutedDark mb-2">Match some, but not all, of your selected genres.</p>
+                <div className="space-y-3">
+                  {visibleMatchesSome.map(renderMatchCard)}
+                </div>
               </div>
             )}
 
             {(everyoneMatches.length > 0 || perMemberMatches.some((p) => p.movies.length > 0)) && (
               <div className="mt-8 pt-6 border-t-2 border-cinema-border">
-                <div className="text-sm font-bold text-cinema-mutedLight mb-4" style={displayFont}>
+                <div className="text-sm font-bold text-cinema-gold mb-4" style={displayFont}>
                   OTHER MATCHES IN YOUR FAMILY
                 </div>
 
                 {everyoneMatches.length > 0 && (
                   <div className="mb-6 pb-6 border-b border-cinema-border last:border-b-0 last:pb-0 last:mb-0">
-                    <div className="text-xs font-bold text-cinema-gold uppercase tracking-wide mb-2">Everyone</div>
+                    <div className="text-sm font-bold text-cinema-gold uppercase tracking-wide mb-2">Everyone</div>
                     <div className="space-y-3">{everyoneMatches.map(renderMatchCard)}</div>
                   </div>
                 )}
@@ -1576,7 +1646,7 @@ export default function Home() {
                   .filter((p) => p.movies.length > 0)
                   .map((p) => (
                     <div key={p.member.email} className="mb-6 pb-6 border-b border-cinema-border last:border-b-0 last:pb-0 last:mb-0">
-                      <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">You & {p.member.name}</div>
+                      <div className="text-sm font-bold text-cinema-gold uppercase tracking-wide mb-2">You & {p.member.name}</div>
                       <div className="space-y-3">{p.movies.map(renderMatchCard)}</div>
                     </div>
                   ))}
@@ -1589,6 +1659,20 @@ export default function Home() {
           <div className="max-w-lg mx-auto">
             <p className="text-xs text-cinema-mutedDark mb-3">Everything you've swiped on. Change your mind any time.</p>
 
+            <div className="flex flex-wrap gap-2 mb-3">
+              {[
+                { key: "all", label: "All" },
+                { key: "yes", label: `Yes (${myYes.length})` },
+                { key: "no", label: `No (${myNo.length})` },
+                { key: "seen", label: `Seen (${myWatched.length})` },
+                { key: "review-later", label: `Review Later (${reviewLaterMovies.length})` },
+              ].map((s) => (
+                <Chip key={s.key} active={historyStatusFilter === s.key} onClick={() => setHistoryStatusFilter(s.key)}>
+                  {s.label}
+                </Chip>
+              ))}
+            </div>
+
             <input
               value={historySearch}
               onChange={(e) => setHistorySearch(e.target.value)}
@@ -1596,66 +1680,127 @@ export default function Home() {
               className="w-full px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold mb-4"
             />
 
-            {myWatched.length > 0 && (
-              <FilterSortBar
-                sort={historySort}
-                setSort={setHistorySort}
-                genreFilter={historyGenreFilter}
-                setGenreFilter={setHistoryGenreFilter}
-                castQuery={historyCastQuery}
-                setCastQuery={setHistoryCastQuery}
-                sortOptions={["year", "score", "title"]}
-              />
+            <FilterSortBar
+              sort={historySort}
+              setSort={setHistorySort}
+              genreFilter={historyGenreFilter}
+              setGenreFilter={setHistoryGenreFilter}
+              castQuery={historyCastQuery}
+              setCastQuery={setHistoryCastQuery}
+              sortOptions={["year", "score", "title"]}
+            />
+
+            {(historyStatusFilter === "all" || historyStatusFilter === "yes") && (
+              <>
+                <div className="text-sm font-bold text-cinema-gold uppercase tracking-wide mb-2">
+                  Yes ({visibleYesInVotes.length})
+                </div>
+                <div className="space-y-3 mb-6">
+                  {visibleYesInVotes.length === 0 && <p className="text-cinema-muted text-sm py-2">Nothing here yet.</p>}
+                  {visibleYesInVotes.map((m) => (
+                    <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
+                      {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
+                      <div className="min-w-0 flex-1">
+                        <div className="font-extrabold">{m.title}</div>
+                        <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
+                        <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
+                        <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
+                        <ProviderRow movieId={m.id} region={profile?.region} />
+                        <TrailerButton movieId={m.id} />
+                        <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
+                        <VoteSwitcher current="yes" onSet={(choice) => castVote(m.id, choice)} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
 
-            <div className="text-xs font-bold text-cinema-gold uppercase tracking-wide mb-2">
-              Seen ({visibleSeen.length})
-            </div>
-            <p className="text-[11px] text-cinema-mutedDark mb-2">Movies you've marked as already seen.</p>
-            <div className="space-y-3 mb-6">
-              {visibleSeen.length === 0 && <p className="text-cinema-muted text-sm py-2">Nothing here yet.</p>}
-              {visibleSeen.map((m) => (
-                <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
-                  {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
-                  <div className="min-w-0 flex-1">
-                    <div className="font-extrabold">{m.title}</div>
-                    <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
-                    <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
-                    <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
-                    <ProviderRow movieId={m.id} region={profile?.region} />
-                    <TrailerButton movieId={m.id} />
-                    <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
-                    <VoteSwitcher current="seen" onSet={(choice) => castVote(m.id, choice)} />
-                  </div>
+            {(historyStatusFilter === "all" || historyStatusFilter === "seen") && (
+              <>
+                <div className="text-sm font-bold text-cinema-gold uppercase tracking-wide mb-2">
+                  Seen ({visibleSeen.length})
                 </div>
-              ))}
-            </div>
+                <p className="text-[11px] text-cinema-mutedDark mb-2">Movies you've marked as already seen.</p>
+                <div className="space-y-3 mb-6">
+                  {visibleSeen.length === 0 && <p className="text-cinema-muted text-sm py-2">Nothing here yet.</p>}
+                  {visibleSeen.map((m) => (
+                    <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
+                      {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
+                      <div className="min-w-0 flex-1">
+                        <div className="font-extrabold">{m.title}</div>
+                        <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
+                        <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
+                        <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
+                        <ProviderRow movieId={m.id} region={profile?.region} />
+                        <TrailerButton movieId={m.id} />
+                        <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
+                        <VoteSwitcher current="seen" onSet={(choice) => castVote(m.id, choice)} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
 
-            <div className="text-xs font-bold text-cinema-mutedDark uppercase tracking-wide mb-2">
-              You said no ({myNo.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase())).length})
-            </div>
-            <div className="space-y-3">
-              {myNo.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase())).length === 0 && (
-                <p className="text-cinema-muted text-sm py-2">{historySearch.trim() ? "No matches." : "Nothing yet."}</p>
-              )}
-              {myNo
-                .filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase()))
-                .map((m) => (
-                <div key={m.id} className="flex gap-3 bg-cinema-panel/60 rounded-xl p-3 border border-cinema-border">
-                  {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
-                  <div className="min-w-0 flex-1">
-                    <div className="font-extrabold">{m.title}</div>
-                    <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
-                    <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
-                    <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
-                    <ProviderRow movieId={m.id} region={profile?.region} />
-                    <TrailerButton movieId={m.id} />
-                    <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
-                    <VoteSwitcher current="no" onSet={(choice) => castVote(m.id, choice)} />
-                  </div>
+            {(historyStatusFilter === "all" || historyStatusFilter === "no") && (
+              <>
+                <div className="text-sm font-bold text-cinema-gold uppercase tracking-wide mb-2">
+                  No ({visibleNoInVotes.length})
                 </div>
-              ))}
-            </div>
+                <div className="space-y-3 mb-6">
+                  {visibleNoInVotes.length === 0 && <p className="text-cinema-muted text-sm py-2">Nothing here yet.</p>}
+                  {visibleNoInVotes.map((m) => (
+                    <div key={m.id} className="flex gap-3 bg-cinema-panel/60 rounded-xl p-3 border border-cinema-border">
+                      {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
+                      <div className="min-w-0 flex-1">
+                        <div className="font-extrabold">{m.title}</div>
+                        <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
+                        <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
+                        <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
+                        <ProviderRow movieId={m.id} region={profile?.region} />
+                        <TrailerButton movieId={m.id} />
+                        <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
+                        <VoteSwitcher current="no" onSet={(choice) => castVote(m.id, choice)} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {(historyStatusFilter === "all" || historyStatusFilter === "review-later") && (
+              <>
+                <div className="text-sm font-bold text-cinema-gold uppercase tracking-wide mb-2">
+                  Review Later ({visibleReviewLater.length})
+                </div>
+                <p className="text-[11px] text-cinema-mutedDark mb-2">Movies you skipped to decide on later — still no vote cast.</p>
+                <div className="space-y-3">
+                  {visibleReviewLater.length === 0 && <p className="text-cinema-muted text-sm py-2">Nothing here yet.</p>}
+                  {visibleReviewLater.map((m) => (
+                    <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
+                      {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
+                      <div className="min-w-0 flex-1">
+                        <div className="font-extrabold">{m.title}</div>
+                        <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
+                        <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
+                        <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
+                        <ProviderRow movieId={m.id} region={profile?.region} />
+                        <TrailerButton movieId={m.id} />
+                        <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
+                        <VoteSwitcher onSet={(choice) => castVote(m.id, choice)} />
+                        <button
+                          onClick={() => setSkippedOrder((prev) => prev.filter((id) => id !== m.id))}
+                          className="text-[11px] font-bold px-2 py-0.5 rounded-full border border-cinema-border text-cinema-muted hover:border-cinema-mutedLight mt-1"
+                        >
+                          Remove from review list
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -1684,22 +1829,20 @@ export default function Home() {
 
             <div className="space-y-3">
               {visibleSoloWatch.length === 0 && <p className="text-cinema-muted text-sm text-center py-6">Nothing here yet.</p>}
-              {visibleSoloWatch.map((m) => (
-                <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
-                  {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
-                  <div className="min-w-0 flex-1">
-                    <div className="font-extrabold">{m.title}</div>
-                    <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
-                    <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
-                    <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
-                    <ProviderRow movieId={m.id} region={profile?.region} />
-                    <TrailerButton movieId={m.id} />
-                    <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
-                    <VoteSwitcher current="yes" onSet={(choice) => castVote(m.id, choice)} />
-                  </div>
-                </div>
-              ))}
+              {visibleSoloAll.map(renderSoloCard)}
             </div>
+
+            {visibleSoloSome.length > 0 && (
+              <div className="mt-6">
+                <div className="text-sm font-bold text-cinema-gold uppercase tracking-wide mb-2">
+                  Partial genre matches
+                </div>
+                <p className="text-[11px] text-cinema-mutedDark mb-2">Match some, but not all, of your selected genres.</p>
+                <div className="space-y-3">
+                  {visibleSoloSome.map(renderSoloCard)}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1708,7 +1851,7 @@ export default function Home() {
             <p className="text-xs text-cinema-mutedDark mb-4">What everyone else in the family has said yes to.</p>
             {spotlight.length > 0 && (
               <>
-                <div className="text-xs font-bold text-cinema-gold uppercase tracking-wide mb-2">Recommended to the family</div>
+                <div className="text-sm font-bold text-cinema-gold uppercase tracking-wide mb-2">Recommended to the family</div>
                 <div className="space-y-3 mb-6">
                   {Array.from(new Set(spotlight.map((s) => s.movieId)))
                     .map((mid) => (pool ? pool.movies.find((m) => m.id === mid) : null))
@@ -1745,7 +1888,7 @@ export default function Home() {
 
             {familyYesByMember.map(({ member, movies }) => (
               <div key={member.email} className="mb-6">
-                <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">{member.name} said yes to ({movies.length})</div>
+                <div className="text-sm font-bold text-cinema-gold uppercase tracking-wide mb-2">{member.name} said yes to ({movies.length})</div>
                 {movies.length === 0 && <p className="text-cinema-mutedDark text-sm mb-2">Nothing yet.</p>}
                 <div className="space-y-3">
                   {movies.map((m) => {
