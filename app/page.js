@@ -692,6 +692,7 @@ export default function Home() {
       // temporary Movie Night room — just this room's member record, permanent profile untouched
       await saveMember(activeRoomCode, { name: displayName, email, services: servicesInput, genres: genresInput, favorites });
       await checkInstantMatches(activeRoomCode);
+      await fetchPool();
     }
     setScreen("swipe");
   }
@@ -750,6 +751,30 @@ export default function Home() {
       // (so votes/matches on them stay valid) and add anything new
       const byId = new Map(existingMovies.map((m) => [m.id, m]));
       for (const m of fetched) if (!byId.has(m.id)) byId.set(m.id, m);
+
+      // make sure everyone's existing votes are actually represented here —
+      // don't leave it to chance whether TMDB's discover results happened to
+      // include something someone already voted on elsewhere
+      const allVotedIds = new Set();
+      for (const mem of members) {
+        try {
+          const vRes = await fetch(`/api/uservotes?email=${encodeURIComponent(mem.email)}`);
+          const vData = await vRes.json();
+          Object.keys(vData.votes || {}).forEach((id) => allVotedIds.add(id));
+        } catch {
+          // one member's history failing shouldn't block the pool
+        }
+      }
+      const missingIds = Array.from(allVotedIds).filter((id) => !byId.has(Number(id)));
+      if (missingIds.length) {
+        const fetchedMissing = await Promise.all(
+          missingIds.map((id) => fetch(`/api/movie?movieId=${id}`).then((r) => r.json()).catch(() => null))
+        );
+        fetchedMissing.filter(Boolean).forEach((m) => {
+          if (!byId.has(m.id)) byId.set(m.id, m);
+        });
+      }
+
       const merged = Array.from(byId.values());
 
       const newPool = {
