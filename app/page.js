@@ -767,12 +767,24 @@ export default function Home() {
       }
       const missingIds = Array.from(allVotedIds).filter((id) => !byId.has(Number(id)));
       if (missingIds.length) {
-        const fetchedMissing = await Promise.all(
-          missingIds.map((id) => fetch(`/api/movie?movieId=${id}`).then((r) => r.json()).catch(() => null))
-        );
-        fetchedMissing.filter(Boolean).forEach((m) => {
-          if (!byId.has(m.id)) byId.set(m.id, m);
-        });
+        const fetchedMissing = [];
+        const batchSize = 5;
+        for (let i = 0; i < missingIds.length; i += batchSize) {
+          const batch = missingIds.slice(i, i + batchSize);
+          const results = await Promise.all(
+            batch.map((id) =>
+              fetch(`/api/movie?movieId=${id}`)
+                .then((r) => (r.ok ? r.json() : null))
+                .catch(() => null)
+            )
+          );
+          fetchedMissing.push(...results);
+        }
+        fetchedMissing
+          .filter((m) => m && m.id) // drop anything that failed or came back malformed, instead of silently corrupting the pool
+          .forEach((m) => {
+            if (!byId.has(m.id)) byId.set(m.id, m);
+          });
       }
 
       const merged = Array.from(byId.values());
