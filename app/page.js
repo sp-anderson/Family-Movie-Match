@@ -1562,7 +1562,7 @@ export default function Home() {
 
             {roomMeta?.type === "movie-night" && instantMatches.length > 0 && (
               <div className="mb-6">
-                <div className="text-sm font-bold text-cinema-gold uppercase tracking-wide mb-2">
+                <div className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">
                   Already agree — no swiping needed
                 </div>
                 <p className="text-[11px] text-cinema-mutedDark mb-2">
@@ -1619,7 +1619,7 @@ export default function Home() {
 
             {visibleMatchesSome.length > 0 && (
               <div className="mt-6">
-                <div className="text-sm font-bold text-cinema-gold uppercase tracking-wide mb-2">
+                <div className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">
                   Partial genre matches
                 </div>
                 <p className="text-[11px] text-cinema-mutedDark mb-2">Match some, but not all, of your selected genres.</p>
@@ -1631,13 +1631,13 @@ export default function Home() {
 
             {(everyoneMatches.length > 0 || perMemberMatches.some((p) => p.movies.length > 0)) && (
               <div className="mt-8 pt-6 border-t-2 border-cinema-border">
-                <div className="text-sm font-bold text-cinema-gold mb-4" style={displayFont}>
+                <div className="text-base font-semibold text-cinema-gold mb-4" style={displayFont}>
                   OTHER MATCHES IN YOUR FAMILY
                 </div>
 
                 {everyoneMatches.length > 0 && (
                   <div className="mb-6 pb-6 border-b border-cinema-border last:border-b-0 last:pb-0 last:mb-0">
-                    <div className="text-sm font-bold text-cinema-gold uppercase tracking-wide mb-2">Everyone</div>
+                    <div className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">Everyone</div>
                     <div className="space-y-3">{everyoneMatches.map(renderMatchCard)}</div>
                   </div>
                 )}
@@ -1646,7 +1646,7 @@ export default function Home() {
                   .filter((p) => p.movies.length > 0)
                   .map((p) => (
                     <div key={p.member.email} className="mb-6 pb-6 border-b border-cinema-border last:border-b-0 last:pb-0 last:mb-0">
-                      <div className="text-sm font-bold text-cinema-gold uppercase tracking-wide mb-2">You & {p.member.name}</div>
+                      <div className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">You & {p.member.name}</div>
                       <div className="space-y-3">{p.movies.map(renderMatchCard)}</div>
                     </div>
                   ))}
@@ -1692,7 +1692,7 @@ export default function Home() {
 
             {(historyStatusFilter === "all" || historyStatusFilter === "yes") && (
               <>
-                <div className="text-sm font-bold text-cinema-gold uppercase tracking-wide mb-2">
+                <div className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">
                   Yes ({visibleYesInVotes.length})
                 </div>
                 <div className="space-y-3 mb-6">
@@ -1718,7 +1718,7 @@ export default function Home() {
 
             {(historyStatusFilter === "all" || historyStatusFilter === "seen") && (
               <>
-                <div className="text-sm font-bold text-cinema-gold uppercase tracking-wide mb-2">
+                <div className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">
                   Seen ({visibleSeen.length})
                 </div>
                 <p className="text-[11px] text-cinema-mutedDark mb-2">Movies you've marked as already seen.</p>
@@ -1745,7 +1745,7 @@ export default function Home() {
 
             {(historyStatusFilter === "all" || historyStatusFilter === "no") && (
               <>
-                <div className="text-sm font-bold text-cinema-gold uppercase tracking-wide mb-2">
+                <div className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">
                   No ({visibleNoInVotes.length})
                 </div>
                 <div className="space-y-3 mb-6">
@@ -1771,7 +1771,7 @@ export default function Home() {
 
             {(historyStatusFilter === "all" || historyStatusFilter === "review-later") && (
               <>
-                <div className="text-sm font-bold text-cinema-gold uppercase tracking-wide mb-2">
+                <div className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">
                   Review Later ({visibleReviewLater.length})
                 </div>
                 <p className="text-[11px] text-cinema-mutedDark mb-2">Movies you skipped to decide on later — still no vote cast.</p>
@@ -1834,7 +1834,7 @@ export default function Home() {
 
             {visibleSoloSome.length > 0 && (
               <div className="mt-6">
-                <div className="text-sm font-bold text-cinema-gold uppercase tracking-wide mb-2">
+                <div className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">
                   Partial genre matches
                 </div>
                 <p className="text-[11px] text-cinema-mutedDark mb-2">Match some, but not all, of your selected genres.</p>
@@ -1851,7 +1851,7 @@ export default function Home() {
             <p className="text-xs text-cinema-mutedDark mb-4">What everyone else in the family has said yes to.</p>
             {spotlight.length > 0 && (
               <>
-                <div className="text-sm font-bold text-cinema-gold uppercase tracking-wide mb-2">Recommended to the family</div>
+                <div className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">Recommended to the family</div>
                 <div className="space-y-3 mb-6">
                   {Array.from(new Set(spotlight.map((s) => s.movieId)))
                     .map((mid) => (pool ? pool.movies.find((m) => m.id === mid) : null))
@@ -1888,7 +1888,7 @@ export default function Home() {
 
             {familyYesByMember.map(({ member, movies }) => (
               <div key={member.email} className="mb-6">
-                <div className="text-sm font-bold text-cinema-gold uppercase tracking-wide mb-2">{member.name} said yes to ({movies.length})</div>
+                <div className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">{member.name} said yes to ({movies.length})</div>
                 {movies.length === 0 && <p className="text-cinema-mutedDark text-sm mb-2">Nothing yet.</p>}
                 <div className="space-y-3">
                   {movies.map((m) => {
