@@ -239,12 +239,12 @@ function BackToTopButton() {
   );
 }
 
-function SpotlightControl({ movieId, spotlight, myEmail, onToggle }) {
+function SpotlightControl({ movieId, spotlight, myEmail, onToggle, hideLabel }) {
   const recommenders = spotlight.filter((s) => s.movieId === movieId);
   const mine = recommenders.some((s) => s.byEmail === myEmail);
   return (
     <div className="mt-1">
-      {recommenders.length > 0 && (
+      {!hideLabel && recommenders.length > 0 && (
         <div className="text-[11px] text-cinema-gold font-bold mb-1">
           📢 Recommended by {recommenders.map((r) => r.byName).join(", ")}
         </div>
@@ -1761,7 +1761,7 @@ export default function Home() {
                         <Play className="w-4 h-4" /> Watch trailer
                       </a>
                     )}
-                    <SpotlightControl movieId={currentMovie.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
+                    <SpotlightControl movieId={currentMovie.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} hideLabel={currentMovieNudges.length > 0} />
                   </div>
                 </div>
                 <div className="flex items-center justify-center gap-4 mt-3 text-xs text-cinema-mutedDark">
