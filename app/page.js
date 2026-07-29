@@ -123,9 +123,12 @@ function ProviderRow({ movieId, region, inTheaters }) {
   );
 }
 
-function FilterSortBar({ sort, setSort, genreFilter, setGenreFilter, castQuery, setCastQuery, sortOptions }) {
+function FilterSortBar({ sort, setSort, genreFilter, setGenreFilter, castQuery, setCastQuery, sortOptions, availabilityFilter, setAvailabilityFilter }) {
   function toggleGenre(id) {
     setGenreFilter(genreFilter.includes(id) ? genreFilter.filter((g) => g !== id) : [...genreFilter, id]);
+  }
+  function toggleAvailability(key) {
+    setAvailabilityFilter(availabilityFilter.includes(key) ? availabilityFilter.filter((k) => k !== key) : [...availabilityFilter, key]);
   }
   return (
     <div className="mb-4 space-y-2">
@@ -149,6 +152,26 @@ function FilterSortBar({ sort, setSort, genreFilter, setGenreFilter, castQuery, 
             {sort.dir === "asc" ? "↑ Low to high" : "↓ High to low"}
           </button>
         )}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        <button
+          onClick={() => toggleAvailability("theaters")}
+          className={
+            "text-[10px] font-bold px-2 py-1 rounded-full border " +
+            (availabilityFilter.includes("theaters") ? "bg-cinema-gold text-cinema-ink border-cinema-gold" : "border-cinema-border text-cinema-muted hover:border-cinema-gold")
+          }
+        >
+          In Theaters
+        </button>
+        <button
+          onClick={() => toggleAvailability("streaming")}
+          className={
+            "text-[10px] font-bold px-2 py-1 rounded-full border " +
+            (availabilityFilter.includes("streaming") ? "bg-cinema-gold text-cinema-ink border-cinema-gold" : "border-cinema-border text-cinema-muted hover:border-cinema-gold")
+          }
+        >
+          Streaming
+        </button>
       </div>
       <input
         value={castQuery}
@@ -333,14 +356,17 @@ export default function Home() {
   const [matchesSort, setMatchesSort] = useState({ key: "", dir: "desc" });
   const [matchesGenreFilter, setMatchesGenreFilter] = useState([]);
   const [matchesCastQuery, setMatchesCastQuery] = useState("");
+  const [matchesAvailabilityFilter, setMatchesAvailabilityFilter] = useState([]);
 
   const [historySort, setHistorySort] = useState({ key: "", dir: "desc" });
   const [historyGenreFilter, setHistoryGenreFilter] = useState([]);
   const [historyCastQuery, setHistoryCastQuery] = useState("");
+  const [historyAvailabilityFilter, setHistoryAvailabilityFilter] = useState([]);
 
   const [soloSort, setSoloSort] = useState({ key: "", dir: "desc" });
   const [soloGenreFilter, setSoloGenreFilter] = useState([]);
   const [soloCastQuery, setSoloCastQuery] = useState("");
+  const [soloAvailabilityFilter, setSoloAvailabilityFilter] = useState([]);
   const [soloSearch, setSoloSearch] = useState("");
 
   const [screen, setScreen] = useState("join");
@@ -964,6 +990,12 @@ export default function Home() {
     return (movie.genre_ids || []).some((g) => genreIds.includes(g));
   }
 
+  function passesAvailabilityFilter(movie, availability) {
+    if (!availability.length) return true;
+    const inTheaters = !!movie._inTheaters;
+    return (availability.includes("theaters") && inTheaters) || (availability.includes("streaming") && !inTheaters);
+  }
+
   function splitByGenreMatch(movies, genreFilter) {
     if (!genreFilter.length) return { all: movies, some: [] };
     const all = [];
@@ -1252,32 +1284,32 @@ export default function Home() {
   useCastFetch(myYes, soloCastQuery);
 
   const visibleMatches = sortMovies(
-    readyToWatch.filter((m) => passesGenreFilter(m, matchesGenreFilter) && passesCastFilter(m, matchesCastQuery)),
+    readyToWatch.filter((m) => passesGenreFilter(m, matchesGenreFilter) && passesCastFilter(m, matchesCastQuery) && passesAvailabilityFilter(m, matchesAvailabilityFilter)),
     matchesSort
   );
   const { all: visibleMatchesAll, some: visibleMatchesSome } = splitByGenreMatch(visibleMatches, matchesGenreFilter);
 
   const visibleSoloWatch = sortMovies(
-    mySoloSearched.filter((m) => passesGenreFilter(m, soloGenreFilter) && passesCastFilter(m, soloCastQuery)),
+    mySoloSearched.filter((m) => passesGenreFilter(m, soloGenreFilter) && passesCastFilter(m, soloCastQuery) && passesAvailabilityFilter(m, soloAvailabilityFilter)),
     soloSort
   );
   const { all: visibleSoloAll, some: visibleSoloSome } = splitByGenreMatch(visibleSoloWatch, soloGenreFilter);
 
   const mySeenSearched = myWatched.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase()));
   const visibleSeen = sortMovies(
-    mySeenSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery)),
+    mySeenSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery) && passesAvailabilityFilter(m, historyAvailabilityFilter)),
     historySort
   );
 
   const myYesInVotesSearched = myYes.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase()));
   const visibleYesInVotes = sortMovies(
-    myYesInVotesSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery)),
+    myYesInVotesSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery) && passesAvailabilityFilter(m, historyAvailabilityFilter)),
     historySort
   );
 
   const myNoInVotesSearched = myNo.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase()));
   const visibleNoInVotes = sortMovies(
-    myNoInVotesSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery)),
+    myNoInVotesSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery) && passesAvailabilityFilter(m, historyAvailabilityFilter)),
     historySort
   );
 
@@ -1286,7 +1318,7 @@ export default function Home() {
     : [];
   const reviewLaterSearched = reviewLaterMovies.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase()));
   const visibleReviewLater = sortMovies(
-    reviewLaterSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery)),
+    reviewLaterSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery) && passesAvailabilityFilter(m, historyAvailabilityFilter)),
     historySort
   );
 
@@ -1802,6 +1834,8 @@ export default function Home() {
                 setGenreFilter={setMatchesGenreFilter}
                 castQuery={matchesCastQuery}
                 setCastQuery={setMatchesCastQuery}
+                availabilityFilter={matchesAvailabilityFilter}
+                setAvailabilityFilter={setMatchesAvailabilityFilter}
                 sortOptions={["year", "score", "title"]}
               />
             )}
@@ -1894,6 +1928,8 @@ export default function Home() {
               setGenreFilter={setHistoryGenreFilter}
               castQuery={historyCastQuery}
               setCastQuery={setHistoryCastQuery}
+              availabilityFilter={historyAvailabilityFilter}
+              setAvailabilityFilter={setHistoryAvailabilityFilter}
               sortOptions={["year", "score", "title"]}
             />
 
@@ -2030,6 +2066,8 @@ export default function Home() {
                 setGenreFilter={setSoloGenreFilter}
                 castQuery={soloCastQuery}
                 setCastQuery={setSoloCastQuery}
+                availabilityFilter={soloAvailabilityFilter}
+                setAvailabilityFilter={setSoloAvailabilityFilter}
                 sortOptions={["year", "score", "title"]}
               />
             )}
