@@ -498,6 +498,7 @@ export default function Home() {
     setPool(data.pool || null);
     setSpotlight(data.spotlight || []);
     setSkippedMap(data.skipped || {});
+    setNudgeDismissedMap(data.nudgeDismissed || {});
     const assembledVotes = await assembleVotes(data.members || []);
     setVotes(assembledVotes);
     return { ...data, votes: assembledVotes };
@@ -929,7 +930,8 @@ export default function Home() {
     // eslint-disable-next-line
   }, [pool, myMaxRating, certifications]);
 
-  const [reconsidered, setReconsidered] = useState(new Set()); // movieIds already re-decided this session, so nudges don't loop
+  const [nudgeDismissedMap, setNudgeDismissedMap] = useState({}); // { email: [movieId, ...] } — persisted, so a resolved nudge stays resolved
+  const reconsidered = new Set(nudgeDismissedMap[email] || []);
   const [skippedMap, setSkippedMap] = useState({}); // { email: [movieId, ...] } — persisted server-side so it survives reloads
   const skippedOrder = skippedMap[email] || [];
 
@@ -1103,11 +1105,28 @@ export default function Home() {
     setSpotlight(data.spotlight || []);
   }
 
+  async function dismissNudge(movieId) {
+    setNudgeDismissedMap((prev) => {
+      const list = prev[email] || [];
+      if (list.includes(movieId)) return prev;
+      return { ...prev, [email]: [...list, movieId] };
+    });
+    try {
+      await fetch("/api/group", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: activeRoomCode, type: "nudgeDismiss", payload: { email, movieId } }),
+      });
+    } catch {
+      // local state already updated optimistically — a later refresh will reconcile
+    }
+  }
+
   function commitSwipe(choice) {
     if (!currentMovie || animating) return;
     const movie = currentMovie;
     if (nudgeRecommenders(movie.id).length > 0) {
-      setReconsidered((prev) => new Set(prev).add(movie.id));
+      dismissNudge(movie.id);
     }
     if (choice === "yes" && members.length > 1) {
       const updatedVotesForMovie = { ...(votes[movie.id] || {}), [email]: "yes" };
@@ -1126,7 +1145,7 @@ export default function Home() {
   function markSeen() {
     if (!currentMovie || animating) return;
     if (nudgeRecommenders(currentMovie.id).length > 0) {
-      setReconsidered((prev) => new Set(prev).add(currentMovie.id));
+      dismissNudge(currentMovie.id);
     }
     castVote(currentMovie.id, "seen");
   }
