@@ -11,8 +11,19 @@ const SERVICES = [
   { id: 230, name: "Crave" },
   { id: 283, name: "Crunchyroll" },
   { id: 531, name: "Paramount+" },
-  { id: 1899, name: "Max" },
+  { id: 1899, name: "HBO Max" },
+  { id: 15, name: "Hulu" },
+  { id: 386, name: "Peacock" },
 ];
+
+// TMDB's provider names come from JustWatch and can lag behind real-world
+// rebrands — override known-stale ones rather than showing outdated names.
+const PROVIDER_NAME_OVERRIDES = {
+  1899: "HBO Max", // TMDB still serves "Max"; WBD reverted to "HBO Max" in July 2025
+};
+function providerDisplayName(id, fallbackName) {
+  return PROVIDER_NAME_OVERRIDES[id] || fallbackName;
+}
 
 const RATINGS = ["G", "PG", "PG-13", "R", "NC-17"];
 function ratingRank(cert) {
@@ -60,6 +71,14 @@ function NewBadge() {
   );
 }
 
+function TheaterBadge() {
+  return (
+    <span className="absolute top-2 right-2 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-cinema-orange text-cinema-ink shadow">
+      🎬 IN THEATERS
+    </span>
+  );
+}
+
 function Chip({ active, onClick, children }) {
   return (
     <button
@@ -76,7 +95,7 @@ function Chip({ active, onClick, children }) {
   );
 }
 
-function ProviderRow({ movieId, region }) {
+function ProviderRow({ movieId, region, inTheaters }) {
   const [providers, setProviders] = useState(null);
   useEffect(() => {
     let cancelled = false;
@@ -88,9 +107,13 @@ function ProviderRow({ movieId, region }) {
   }, [movieId, region]);
 
   if (providers === null) return <div className="text-[11px] text-cinema-mutedDark mt-1">Checking where to watch…</div>;
-  if (providers.length === 0) return <div className="text-[11px] text-cinema-mutedDark mt-1">Not currently on any of your services.</div>;
+  if (providers.length === 0) {
+    if (inTheaters) return <div className="text-[11px] text-cinema-orange font-bold mt-1">🎬 Now playing in theaters</div>;
+    return <div className="text-[11px] text-cinema-mutedDark mt-1">Not currently on any of your services.</div>;
+  }
   return (
     <div className="flex flex-wrap gap-1 mt-1">
+      {inTheaters && <span className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-orange/20 text-cinema-orange font-bold">🎬 In theaters</span>}
       {providers.map((p) => (
         <span key={p.id} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-green/20 text-cinema-green font-bold">
           {p.name}
@@ -328,6 +351,26 @@ export default function Home() {
 
   const [groupInput, setGroupInput] = useState("");
   const [regionInput, setRegionInput] = useState("CA");
+  const [availableProviders, setAvailableProviders] = useState(SERVICES); // live list from TMDB, falls back to the static set while loading
+  const [providerNameMap, setProviderNameMap] = useState(() => Object.fromEntries(SERVICES.map((s) => [s.id, s.name])));
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/providers-list?region=${regionInput}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled || !d.results?.length) return;
+        const corrected = d.results.map((p) => ({ ...p, name: providerDisplayName(p.id, p.name) }));
+        setAvailableProviders(corrected);
+        setProviderNameMap((prev) => ({ ...prev, ...Object.fromEntries(corrected.map((p) => [p.id, p.name])) }));
+      })
+      .catch(() => {
+        // keep whatever list we already have (static fallback or a previous successful fetch)
+      });
+    return () => (cancelled = true);
+  }, [regionInput]);
+
+  const [wantsTheatersInput, setWantsTheatersInput] = useState(false);
   const [roleInput, setRoleInput] = useState("child");
   const [matchWith, setMatchWith] = useState(null); // null = everyone in the family
   const [celebration, setCelebration] = useState(null); // the movie that just became a full match
@@ -366,6 +409,7 @@ export default function Home() {
       if (data.profile) {
         setProfile(data.profile);
         setRegionInput(data.profile.region || "CA");
+        setWantsTheatersInput(data.profile.wantsTheaters || false);
         setRoleInput(data.profile.role || "child");
         setServicesInput(data.profile.services || []);
         setGenresInput(data.profile.genres || []);
@@ -676,10 +720,10 @@ export default function Home() {
         setError("This family already has a parent — ask them to promote you from the Family tab.");
         return;
       }
-      await saveProfile({ region: regionInput, role: finalRole, services: servicesInput, genres: genresInput, favorites });
-      await saveMember(activeRoomCode, { name: displayName, email, role: finalRole, services: servicesInput, genres: genresInput, favorites });
+      await saveProfile({ region: regionInput, role: finalRole, services: servicesInput, genres: genresInput, favorites, wantsTheaters: wantsTheatersInput });
+      await saveMember(activeRoomCode, { name: displayName, email, role: finalRole, services: servicesInput, genres: genresInput, favorites, wantsTheaters: wantsTheatersInput });
       setFamilyMembers((prev) => {
-        const rec = { name: displayName, email, role: finalRole, services: servicesInput, genres: genresInput, favorites };
+        const rec = { name: displayName, email, role: finalRole, services: servicesInput, genres: genresInput, favorites, wantsTheaters: wantsTheatersInput };
         const idx = prev.findIndex((m) => m.email === email);
         if (idx >= 0) {
           const copy = [...prev];
@@ -690,7 +734,7 @@ export default function Home() {
       });
     } else {
       // temporary Movie Night room — just this room's member record, permanent profile untouched
-      await saveMember(activeRoomCode, { name: displayName, email, services: servicesInput, genres: genresInput, favorites });
+      await saveMember(activeRoomCode, { name: displayName, email, services: servicesInput, genres: genresInput, favorites, wantsTheaters: wantsTheatersInput });
       await checkInstantMatches(activeRoomCode);
       await fetchPool();
     }
@@ -744,6 +788,24 @@ export default function Home() {
           fetched = fetched.concat(tagged);
         } catch {
           // recommendations are a bonus — don't block the whole fetch if one member's batch fails
+        }
+      }
+
+      // pull in what's currently playing in theaters, if anyone wants that included
+      const anyoneWantsTheaters = members.some((m) => m.wantsTheaters) || profile.wantsTheaters;
+      if (anyoneWantsTheaters) {
+        try {
+          for (let page = 1; page <= 2; page++) {
+            const npRes = await fetch(`/api/nowplaying?region=${profile.region || "CA"}&page=${page}`);
+            const npData = await npRes.json();
+            if (!npRes.ok || !npData.results?.length) break;
+            const tagged = npData.results
+              .filter((m) => !allGenreIds.length || (m.genre_ids || []).some((g) => allGenreIds.includes(g)))
+              .map((m) => ({ ...m, _inTheaters: true }));
+            fetched = fetched.concat(tagged);
+          }
+        } catch {
+          // theaters listing is a bonus — don't block the whole fetch if it fails
         }
       }
 
@@ -1249,6 +1311,7 @@ export default function Home() {
         {m.poster_path && (
           <div className="relative flex-shrink-0">
             {isNewRelease(m.release_date) && <NewBadge />}
+            {m._inTheaters && <TheaterBadge />}
             <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg" alt={m.title} />
           </div>
         )}
@@ -1498,7 +1561,13 @@ export default function Home() {
             </div>
             <div className="mb-5">
               <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Services you're subscribed to</div>
-              <div className="flex flex-wrap gap-2">{SERVICES.map((s) => <Chip key={s.id} active={servicesInput.includes(s.id)} onClick={() => toggleService(s.id)}>{s.name}</Chip>)}</div>
+              <div className="flex flex-wrap gap-2">{availableProviders.map((s) => <Chip key={s.id} active={servicesInput.includes(s.id)} onClick={() => toggleService(s.id)}>{s.name}</Chip>)}</div>
+            </div>
+            <div className="mb-5">
+              <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Going out to the movies?</div>
+              <Chip active={wantsTheatersInput} onClick={() => setWantsTheatersInput((v) => !v)}>
+                🎬 Include what's currently in theaters
+              </Chip>
             </div>
             <div className="mb-5">
               <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Genres you like</div>
@@ -1598,6 +1667,7 @@ export default function Home() {
                 >
                   <div className="relative w-full aspect-[2/3] bg-stone-200">
                     {isNewRelease(currentMovie.release_date) && <NewBadge />}
+                    {currentMovie._inTheaters && <TheaterBadge />}
                     {currentMovie.poster_path ? (
                       <img src={`https://image.tmdb.org/t/p/w500${currentMovie.poster_path}`} alt={currentMovie.title} className="w-full h-full object-cover pointer-events-none" draggable={false} />
                     ) : (
@@ -2072,7 +2142,7 @@ export default function Home() {
                     </span>
                   )}
                 </div>
-                <div className="flex flex-wrap gap-1 mb-1">{(m.services || []).map((sid) => <span key={sid} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{SERVICES.find((s) => s.id === sid)?.name}</span>)}</div>
+                <div className="flex flex-wrap gap-1 mb-1">{(m.services || []).map((sid) => <span key={sid} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{providerNameMap[sid] || "Unknown"}</span>)}</div>
                 <div className="flex flex-wrap gap-1 mb-1">{(m.genres || []).map((gid) => <span key={gid} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-gold/20 text-cinema-gold font-bold">{GENRES.find((g) => g.id === gid)?.name}</span>)}</div>
                 {m.favorites?.length > 0 && <div className="text-xs text-cinema-muted mt-1">Favorites: {m.favorites.join(", ")}</div>}
                 {myMember?.role === "parent" && m.email !== email && (
