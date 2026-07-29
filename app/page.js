@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
-import { Heart, X, Users, Settings, Play, Sparkles, Film, LogOut, RefreshCw, Star, Ticket, Eye, Clock, Compass } from "lucide-react";
+import { Heart, X, Users, Settings, Play, Sparkles, Film, LogOut, RefreshCw, Star, Ticket, Eye, Clock, Compass, Bookmark } from "lucide-react";
 
 const SERVICES = [
   { id: 8, name: "Netflix" },
@@ -292,6 +292,11 @@ export default function Home() {
   const [historySort, setHistorySort] = useState({ key: "", dir: "desc" });
   const [historyGenreFilter, setHistoryGenreFilter] = useState([]);
   const [historyCastQuery, setHistoryCastQuery] = useState("");
+
+  const [soloSort, setSoloSort] = useState({ key: "", dir: "desc" });
+  const [soloGenreFilter, setSoloGenreFilter] = useState([]);
+  const [soloCastQuery, setSoloCastQuery] = useState("");
+  const [soloSearch, setSoloSearch] = useState("");
 
   const [screen, setScreen] = useState("join");
   const [error, setError] = useState("");
@@ -1014,24 +1019,19 @@ export default function Home() {
     return ids;
   }, [pool, votes, members]);
 
-  const myYesSearched = myYes.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase()));
-  const myYesFamilyMatches = myYesSearched.filter((m) => fullFamilyMatchIds.has(m.id));
-  const myYesSoloWatch = myYesSearched.filter((m) => !fullFamilyMatchIds.has(m.id));
+  const mySoloSearched = myYes.filter((m) => !fullFamilyMatchIds.has(m.id) && m.title.toLowerCase().includes(soloSearch.trim().toLowerCase()));
 
   useCastFetch(readyToWatch, matchesCastQuery);
-  useCastFetch(myYes.concat(myWatched), historyCastQuery);
+  useCastFetch(myWatched, historyCastQuery);
+  useCastFetch(myYes, soloCastQuery);
 
   const visibleMatches = sortMovies(
     readyToWatch.filter((m) => passesGenreFilter(m, matchesGenreFilter) && passesCastFilter(m, matchesCastQuery)),
     matchesSort
   );
-  const visibleFamilyMatches = sortMovies(
-    myYesFamilyMatches.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery)),
-    historySort
-  );
   const visibleSoloWatch = sortMovies(
-    myYesSoloWatch.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery)),
-    historySort
+    mySoloSearched.filter((m) => passesGenreFilter(m, soloGenreFilter) && passesCastFilter(m, soloCastQuery)),
+    soloSort
   );
   const mySeenSearched = myWatched.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase()));
   const visibleSeen = sortMovies(
@@ -1207,6 +1207,7 @@ export default function Home() {
           {[
             { id: "swipe", label: "Swipe", icon: Heart },
             { id: "matches", label: `Matches (${readyToWatch.length})`, icon: Sparkles },
+            { id: "solo-watch", label: `Solo Watch (${myYes.filter((m) => !fullFamilyMatchIds.has(m.id)).length})`, icon: Bookmark },
             { id: "history", label: "My Votes", icon: Clock },
             { id: "family-picks", label: "Family Picks", icon: Compass },
             { id: "group", label: "Family", icon: Users },
@@ -1552,7 +1553,7 @@ export default function Home() {
               className="w-full px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold mb-4"
             />
 
-            {(myYes.length > 0 || myWatched.length > 0) && (
+            {myWatched.length > 0 && (
               <FilterSortBar
                 sort={historySort}
                 setSort={setHistorySort}
@@ -1565,48 +1566,6 @@ export default function Home() {
             )}
 
             <div className="text-xs font-bold text-cinema-gold uppercase tracking-wide mb-2">
-              Family matches ({visibleFamilyMatches.length})
-            </div>
-            <p className="text-[11px] text-cinema-mutedDark mb-2">Everyone in the family said yes to these too.</p>
-            <div className="space-y-3 mb-6">
-              {visibleFamilyMatches.length === 0 && <p className="text-cinema-muted text-sm py-2">Nothing here yet.</p>}
-              {visibleFamilyMatches.map((m) => (
-                <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-gold/40">
-                  {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
-                  <div className="min-w-0 flex-1">
-                    <div className="font-extrabold">{m.title}</div>
-                    <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
-                    <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
-                    <TrailerButton movieId={m.id} />
-                    <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
-                    <VoteSwitcher current="yes" onSet={(choice) => castVote(m.id, choice)} />
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="text-xs font-bold text-cinema-mutedDark uppercase tracking-wide mb-2">
-              Solo watch ({visibleSoloWatch.length})
-            </div>
-            <p className="text-[11px] text-cinema-mutedDark mb-2">You said yes, but at least one other family member hasn't — these are ones to watch on your own.</p>
-            <div className="space-y-3 mb-6">
-              {visibleSoloWatch.length === 0 && <p className="text-cinema-muted text-sm py-2">Nothing here yet.</p>}
-              {visibleSoloWatch.map((m) => (
-                <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
-                  {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
-                  <div className="min-w-0 flex-1">
-                    <div className="font-extrabold">{m.title}</div>
-                    <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
-                    <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
-                    <TrailerButton movieId={m.id} />
-                    <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
-                    <VoteSwitcher current="yes" onSet={(choice) => castVote(m.id, choice)} />
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="text-xs font-bold text-cinema-mutedDark uppercase tracking-wide mb-2">
               Seen ({visibleSeen.length})
             </div>
             <p className="text-[11px] text-cinema-mutedDark mb-2">Movies you've marked as already seen.</p>
@@ -1646,6 +1605,48 @@ export default function Home() {
                     <TrailerButton movieId={m.id} />
                     <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                     <VoteSwitcher current="no" onSet={(choice) => castVote(m.id, choice)} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {screen === "solo-watch" && (
+          <div className="max-w-lg mx-auto">
+            <p className="text-xs text-cinema-mutedDark mb-3">You said yes, but at least one other family member hasn't — these are ones to watch on your own.</p>
+
+            <input
+              value={soloSearch}
+              onChange={(e) => setSoloSearch(e.target.value)}
+              placeholder="Search your solo watch list…"
+              className="w-full px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold mb-4"
+            />
+
+            {visibleSoloWatch.length > 0 && (
+              <FilterSortBar
+                sort={soloSort}
+                setSort={setSoloSort}
+                genreFilter={soloGenreFilter}
+                setGenreFilter={setSoloGenreFilter}
+                castQuery={soloCastQuery}
+                setCastQuery={setSoloCastQuery}
+                sortOptions={["year", "score", "title"]}
+              />
+            )}
+
+            <div className="space-y-3">
+              {visibleSoloWatch.length === 0 && <p className="text-cinema-muted text-sm text-center py-6">Nothing here yet.</p>}
+              {visibleSoloWatch.map((m) => (
+                <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
+                  {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
+                  <div className="min-w-0 flex-1">
+                    <div className="font-extrabold">{m.title}</div>
+                    <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
+                    <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
+                    <TrailerButton movieId={m.id} />
+                    <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
+                    <VoteSwitcher current="yes" onSet={(choice) => castVote(m.id, choice)} />
                   </div>
                 </div>
               ))}
