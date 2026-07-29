@@ -1,15 +1,17 @@
 import { NextResponse } from "next/server";
 import { redis as kv } from "../../../lib/redis";
 
-// GET /api/group?code=THOMPSONS  -> { members: [], votes: {}, pool: null, spotlight: [], certifications: {}, skipped: {} }
+// GET /api/group?code=THOMPSONS  -> { members: [], pool: null, spotlight: [], certifications: {}, skipped: {} }
+// Note: votes are NOT stored per-room anymore — they belong to the user
+// (see /api/uservotes). The client assembles a room's votes by fetching
+// each member's own vote history and cross-referencing.
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const code = (searchParams.get("code") || "").toUpperCase();
   if (!code) return NextResponse.json({ error: "code required" }, { status: 400 });
 
-  const [members, votes, pool, spotlight, certifications, skipped] = await Promise.all([
+  const [members, pool, spotlight, certifications, skipped] = await Promise.all([
     kv.get(`group:${code}:members`),
-    kv.get(`group:${code}:votes`),
     kv.get(`group:${code}:pool`),
     kv.get(`group:${code}:spotlight`),
     kv.get(`group:${code}:certifications`),
@@ -18,7 +20,6 @@ export async function GET(request) {
 
   return NextResponse.json({
     members: members || [],
-    votes: votes || {},
     pool: pool || null,
     spotlight: spotlight || [],
     certifications: certifications || {},
@@ -26,7 +27,7 @@ export async function GET(request) {
   });
 }
 
-// POST /api/group  body: { code, type: "member"|"vote"|"pool"|"spotlight"|"certification", payload }
+// POST /api/group  body: { code, type: "member"|"pool"|"spotlight"|"certification"|"skip", payload }
 export async function POST(request) {
   const body = await request.json();
   const code = (body.code || "").toUpperCase();
@@ -42,27 +43,6 @@ export async function POST(request) {
     else members.push(body.payload);
     await kv.set(`group:${code}:members`, members);
     return NextResponse.json({ members });
-  }
-
-  if (body.type === "vote") {
-    // payload: { movieId, name, choice }  — "name" here is actually the voter's email
-    const votes = (await kv.get(`group:${code}:votes`)) || {};
-    if (!votes[body.payload.movieId]) votes[body.payload.movieId] = {};
-    votes[body.payload.movieId][body.payload.name] = body.payload.choice;
-    await kv.set(`group:${code}:votes`, votes);
-
-    // also record in this person's global vote index, so any other room/family
-    // they're in can check for overlap without needing to share a pool
-    try {
-      const voterEmail = body.payload.name;
-      const globalVotes = (await kv.get(`user:${voterEmail}:votes`)) || {};
-      globalVotes[body.payload.movieId] = body.payload.choice;
-      await kv.set(`user:${voterEmail}:votes`, globalVotes);
-    } catch {
-      // non-fatal — the per-group vote already succeeded above
-    }
-
-    return NextResponse.json({ votes });
   }
 
   if (body.type === "pool") {

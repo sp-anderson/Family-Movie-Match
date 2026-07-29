@@ -400,16 +400,37 @@ export default function Home() {
     })();
   }, [status, email]);
 
+  async function assembleVotes(membersList) {
+    if (!membersList.length) return {};
+    const results = await Promise.all(
+      membersList.map((m) =>
+        fetch(`/api/uservotes?email=${encodeURIComponent(m.email)}`)
+          .then((r) => r.json())
+          .catch(() => ({ votes: {} }))
+      )
+    );
+    const merged = {};
+    membersList.forEach((m, i) => {
+      const theirVotes = (results[i] && results[i].votes) || {};
+      Object.entries(theirVotes).forEach(([movieId, choice]) => {
+        if (!merged[movieId]) merged[movieId] = {};
+        merged[movieId][m.email] = choice;
+      });
+    });
+    return merged;
+  }
+
   const loadGroup = useCallback(async (code) => {
     if (!code) return null;
     const res = await fetch(`/api/group?code=${encodeURIComponent(code)}`);
     const data = await res.json();
     setMembers(data.members || []);
     setPool(data.pool || null);
-    setVotes(data.votes || {});
     setSpotlight(data.spotlight || []);
     setSkippedMap(data.skipped || {});
-    return data;
+    const assembledVotes = await assembleVotes(data.members || []);
+    setVotes(assembledVotes);
+    return { ...data, votes: assembledVotes };
   }, []);
 
   async function saveProfile(next) {
@@ -496,10 +517,6 @@ export default function Home() {
       setActiveRoomCode(code);
       setRoomMeta(data.meta);
       await checkInstantMatches(code);
-      const existing = await fetch(`/api/group?code=${encodeURIComponent(code)}`).then((r) => r.json());
-      if (existing.pool && existing.pool.movies?.length) {
-        await carryOverVotes(code, existing.pool.movies);
-      }
       setShowNightPanel(false);
       setServicesInput(profile?.services || []);
       setGenresInput(profile?.genres || []);
@@ -679,41 +696,6 @@ export default function Home() {
     setScreen("swipe");
   }
 
-  async function carryOverVotes(roomCode, poolMovies) {
-    try {
-      const res = await fetch(`/api/uservotes?email=${encodeURIComponent(email)}`);
-      const data = await res.json();
-      const globalVotes = data.votes || {};
-      const latest = await fetch(`/api/group?code=${encodeURIComponent(roomCode)}`).then((r) => r.json());
-      const roomVotesForMe = {};
-      Object.entries(latest.votes || {}).forEach(([mid, byEmail]) => {
-        if (byEmail[email]) roomVotesForMe[mid] = byEmail[email];
-      });
-      let carriedAny = false;
-      for (const m of poolMovies) {
-        if (roomVotesForMe[m.id]) continue; // already voted in this room
-        const carried = globalVotes[m.id];
-        if (carried) {
-          // write directly to the explicit roomCode — don't go through castVote,
-          // which targets whatever activeRoomCode is in React state right now,
-          // and that state update may not have landed yet if we just switched rooms
-          await fetch("/api/group", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ code: roomCode, type: "vote", payload: { movieId: m.id, name: email, choice: carried } }),
-          });
-          carriedAny = true;
-        }
-      }
-      if (carriedAny) {
-        const refreshed = await fetch(`/api/group?code=${encodeURIComponent(roomCode)}`).then((r) => r.json());
-        setVotes(refreshed.votes || {});
-      }
-    } catch {
-      // carry-over is a convenience — don't block the room if it fails
-    }
-  }
-
   async function fetchPool() {
     if (!profile) return;
     setFetchingPool(true);
@@ -785,9 +767,6 @@ export default function Home() {
         body: JSON.stringify({ code: activeRoomCode, type: "pool", payload: newPool }),
       });
       setPool(newPool);
-      if (roomMeta?.type === "movie-night") {
-        await carryOverVotes(activeRoomCode, merged);
-      }
       if (fetched.length === 0 && existingMovies.length === 0) {
         setError("TMDB didn't return any titles for this combination of services and genres — try adding more of either in Settings.");
       } else if (fetched.length === 0) {
@@ -968,15 +947,13 @@ export default function Home() {
     // instantly, instead of waiting on the network round-trip
     setVotes((prev) => ({ ...prev, [movieId]: { ...(prev[movieId] || {}), [email]: choice } }));
     try {
-      const res = await fetch("/api/group", {
+      await fetch("/api/uservotes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: activeRoomCode, type: "vote", payload: { movieId, name: email, choice } }),
+        body: JSON.stringify({ email, movieId, choice }),
       });
-      const data = await res.json();
-      setVotes(data.votes || {});
     } catch {
-      // the optimistic update already stuck locally; a later group refresh will reconcile
+      // the optimistic update already stuck locally; a later refresh will reconcile
     }
   }
 
