@@ -303,6 +303,7 @@ export default function Home() {
   const [nightJoinInput, setNightJoinInput] = useState("");
   const [nightError, setNightError] = useState("");
   const [nightBusy, setNightBusy] = useState(false);
+  const [nightCopied, setNightCopied] = useState(null); // "code" | "message" | null
   const [instantMatches, setInstantMatches] = useState([]); // movies both people in a movie-night already said yes to, historically
   const [detailsCache, setDetailsCache] = useState({}); // movieId -> { runtime, cast }
 
@@ -407,6 +408,7 @@ export default function Home() {
     setPool(data.pool || null);
     setVotes(data.votes || {});
     setSpotlight(data.spotlight || []);
+    setSkippedMap(data.skipped || {});
     return data;
   }, []);
 
@@ -528,14 +530,33 @@ export default function Home() {
     const url = typeof window !== "undefined" ? window.location.origin : "";
     return `Join my Movie Night on Family Movie Match! Use code ${activeRoomCode}${url ? " at " + url : ""}`;
   }
-  function shareNightByEmail() {
-    const body = encodeURIComponent(buildNightShareMessage());
-    const subject = encodeURIComponent("Join my Movie Night");
-    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  async function shareNight() {
+    const text = buildNightShareMessage();
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({ title: "Join my Movie Night", text });
+      } catch {
+        // user cancelled the share sheet — nothing to do
+      }
+    } else if (typeof navigator !== "undefined" && navigator.clipboard) {
+      try {
+        await navigator.clipboard.writeText(text);
+        setNightCopied("message");
+        setTimeout(() => setNightCopied(null), 2000);
+      } catch {
+        // clipboard unavailable — nothing more we can do here
+      }
+    }
   }
-  function shareNightByText() {
-    const body = encodeURIComponent(buildNightShareMessage());
-    window.location.href = `sms:?body=${body}`;
+  async function copyNightCode() {
+    if (typeof navigator === "undefined" || !navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(activeRoomCode || "");
+      setNightCopied("code");
+      setTimeout(() => setNightCopied(null), 2000);
+    } catch {
+      // clipboard unavailable
+    }
   }
 
   async function convertRoomToPermanent() {
@@ -668,12 +689,25 @@ export default function Home() {
       Object.entries(latest.votes || {}).forEach(([mid, byEmail]) => {
         if (byEmail[email]) roomVotesForMe[mid] = byEmail[email];
       });
+      let carriedAny = false;
       for (const m of poolMovies) {
         if (roomVotesForMe[m.id]) continue; // already voted in this room
         const carried = globalVotes[m.id];
         if (carried) {
-          await castVote(m.id, carried);
+          // write directly to the explicit roomCode — don't go through castVote,
+          // which targets whatever activeRoomCode is in React state right now,
+          // and that state update may not have landed yet if we just switched rooms
+          await fetch("/api/group", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code: roomCode, type: "vote", payload: { movieId: m.id, name: email, choice: carried } }),
+          });
+          carriedAny = true;
         }
+      }
+      if (carriedAny) {
+        const refreshed = await fetch(`/api/group?code=${encodeURIComponent(roomCode)}`).then((r) => r.json());
+        setVotes(refreshed.votes || {});
       }
     } catch {
       // carry-over is a convenience — don't block the room if it fails
@@ -792,7 +826,8 @@ export default function Home() {
   }, [pool, myMaxRating, certifications]);
 
   const [reconsidered, setReconsidered] = useState(new Set()); // movieIds already re-decided this session, so nudges don't loop
-  const [skippedOrder, setSkippedOrder] = useState([]); // movieIds skipped this session, in the order skipped — pushed to the end of the deck
+  const [skippedMap, setSkippedMap] = useState({}); // { email: [movieId, ...] } — persisted server-side so it survives reloads
+  const skippedOrder = skippedMap[email] || [];
 
   function nudgeRecommenders(movieId) {
     return spotlight.filter((s) => s.movieId === movieId && s.byEmail !== email);
@@ -988,9 +1023,36 @@ export default function Home() {
     castVote(currentMovie.id, "seen");
   }
 
-  function skipCurrent() {
+  async function skipCurrent() {
     if (!currentMovie || animating) return;
-    setSkippedOrder((prev) => (prev.includes(currentMovie.id) ? prev : [...prev, currentMovie.id]));
+    const movieId = currentMovie.id;
+    setSkippedMap((prev) => {
+      const list = prev[email] || [];
+      if (list.includes(movieId)) return prev;
+      return { ...prev, [email]: [...list, movieId] };
+    });
+    try {
+      await fetch("/api/group", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: activeRoomCode, type: "skip", payload: { email, movieId, action: "add" } }),
+      });
+    } catch {
+      // local state already updated optimistically — a later refresh will reconcile
+    }
+  }
+
+  async function unskipMovie(movieId) {
+    setSkippedMap((prev) => ({ ...prev, [email]: (prev[email] || []).filter((id) => id !== movieId) }));
+    try {
+      await fetch("/api/group", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: activeRoomCode, type: "skip", payload: { email, movieId, action: "remove" } }),
+      });
+    } catch {
+      // local state already updated optimistically
+    }
   }
 
   function onPointerDown(e) {
@@ -1291,10 +1353,16 @@ export default function Home() {
           {roomMeta?.type === "movie-night" ? (
             <div>
               <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-1">🎬 Movie Night code</div>
-              <div className="mb-3 px-4 py-3 rounded-xl bg-cinema-bg border-2 border-cinema-gold text-center">
-                <div className="text-3xl font-extrabold text-cinema-gold tracking-[0.15em]" style={{ fontFamily: "monospace" }}>
+              <div className="mb-3 px-4 py-3 rounded-xl bg-cinema-bg border-2 border-cinema-gold flex items-center justify-between gap-3">
+                <div className="text-3xl font-extrabold text-cinema-gold tracking-[0.15em] flex-1 text-center" style={{ fontFamily: "monospace" }}>
                   {activeRoomCode}
                 </div>
+                <button
+                  onClick={copyNightCode}
+                  className="flex-shrink-0 text-xs font-bold px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold"
+                >
+                  {nightCopied === "code" ? "✓ Copied" : "Copy"}
+                </button>
               </div>
               <div className="text-xs text-cinema-muted mb-3">
                 {roomMeta.expiresAt
@@ -1302,11 +1370,8 @@ export default function Home() {
                   : "Made permanent — this is now a real family."}
               </div>
               <div className="flex flex-wrap gap-2 mb-2">
-                <button onClick={shareNightByEmail} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold">
-                  ✉️ Share via Email
-                </button>
-                <button onClick={shareNightByText} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold">
-                  💬 Share via Text
+                <button onClick={shareNight} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold">
+                  {nightCopied === "message" ? "✓ Copied to clipboard" : "📤 Share"}
                 </button>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -1847,7 +1912,7 @@ export default function Home() {
                         <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                         <VoteSwitcher onSet={(choice) => castVote(m.id, choice)} />
                         <button
-                          onClick={() => setSkippedOrder((prev) => prev.filter((id) => id !== m.id))}
+                          onClick={() => unskipMovie(m.id)}
                           className="text-[11px] font-bold px-2 py-0.5 rounded-full border border-cinema-border text-cinema-muted hover:border-cinema-mutedLight mt-1"
                         >
                           Remove from review list
