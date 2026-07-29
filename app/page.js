@@ -172,6 +172,27 @@ function VoteSwitcher({ current, onSet }) {
   );
 }
 
+function BackToTopButton() {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    function onScroll() {
+      setVisible(window.scrollY > 300);
+    }
+    window.addEventListener("scroll", onScroll);
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  if (!visible) return null;
+  return (
+    <button
+      onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+      className="fixed bottom-5 right-5 z-40 flex items-center gap-1.5 px-3 py-2 rounded-full bg-cinema-gold text-cinema-ink font-extrabold text-sm shadow-xl hover:bg-cinema-goldLight"
+      aria-label="Back to top"
+    >
+      ↑ Top
+    </button>
+  );
+}
+
 function SpotlightControl({ movieId, spotlight, myEmail, onToggle }) {
   const recommenders = spotlight.filter((s) => s.movieId === movieId);
   const mine = recommenders.some((s) => s.byEmail === myEmail);
@@ -728,6 +749,7 @@ export default function Home() {
   }, [pool, myMaxRating, certifications]);
 
   const [reconsidered, setReconsidered] = useState(new Set()); // movieIds already re-decided this session, so nudges don't loop
+  const [skippedOrder, setSkippedOrder] = useState([]); // movieIds skipped this session, in the order skipped — pushed to the end of the deck
 
   function nudgeRecommenders(movieId) {
     return spotlight.filter((s) => s.movieId === movieId && s.byEmail !== email);
@@ -760,9 +782,15 @@ export default function Home() {
         return cert !== "" && ratingRank(cert) <= maxRank;
       });
     }
+    if (skippedOrder.length) {
+      const skippedSet = new Set(skippedOrder);
+      const rest = movies.filter((m) => !skippedSet.has(m.id));
+      const pushedToEnd = skippedOrder.map((id) => movies.find((m) => m.id === id)).filter(Boolean);
+      movies = [...rest, ...pushedToEnd];
+    }
     return movies;
     // eslint-disable-next-line
-  }, [pool, myVotedIds, myMaxRating, certifications, votes, email, spotlight, reconsidered]);
+  }, [pool, myVotedIds, myMaxRating, certifications, votes, email, spotlight, reconsidered, skippedOrder]);
   const currentMovie = deck[0];
   const currentMovieNudges = currentMovie ? nudgeRecommenders(currentMovie.id) : [];
 
@@ -902,6 +930,11 @@ export default function Home() {
       setReconsidered((prev) => new Set(prev).add(currentMovie.id));
     }
     castVote(currentMovie.id, "seen");
+  }
+
+  function skipCurrent() {
+    if (!currentMovie || animating) return;
+    setSkippedOrder((prev) => (prev.includes(currentMovie.id) ? prev : [...prev, currentMovie.id]));
   }
 
   function onPointerDown(e) {
@@ -1438,6 +1471,14 @@ export default function Home() {
                   <span>← swipe or tap for no</span>
                   <span>swipe or tap for yes →</span>
                 </div>
+                <div className="flex justify-center mt-2">
+                  <button
+                    onClick={skipCurrent}
+                    className="text-xs font-bold px-3 py-1.5 rounded-full bg-cinema-panel border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold"
+                  >
+                    ⏭ Skip for now — review later
+                  </button>
+                </div>
               </div>
             )}
             {pool && !currentMovie && !ratingCheckPending && (
@@ -1450,6 +1491,8 @@ export default function Home() {
             )}
           </div>
         )}
+
+        {["matches", "history", "solo-watch"].includes(screen) && <BackToTopButton />}
 
         {screen === "matches" && (
           <div className="max-w-lg mx-auto">
@@ -1577,7 +1620,9 @@ export default function Home() {
                   <div className="min-w-0 flex-1">
                     <div className="font-extrabold">{m.title}</div>
                     <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
+                    <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
                     <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
+                    <ProviderRow movieId={m.id} region={profile?.region} />
                     <TrailerButton movieId={m.id} />
                     <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                     <VoteSwitcher current="seen" onSet={(choice) => castVote(m.id, choice)} />
@@ -1601,7 +1646,9 @@ export default function Home() {
                   <div className="min-w-0 flex-1">
                     <div className="font-extrabold">{m.title}</div>
                     <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
+                    <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
                     <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
+                    <ProviderRow movieId={m.id} region={profile?.region} />
                     <TrailerButton movieId={m.id} />
                     <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                     <VoteSwitcher current="no" onSet={(choice) => castVote(m.id, choice)} />
@@ -1643,7 +1690,9 @@ export default function Home() {
                   <div className="min-w-0 flex-1">
                     <div className="font-extrabold">{m.title}</div>
                     <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
+                    <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
                     <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
+                    <ProviderRow movieId={m.id} region={profile?.region} />
                     <TrailerButton movieId={m.id} />
                     <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                     <VoteSwitcher current="yes" onSet={(choice) => castVote(m.id, choice)} />
@@ -1672,6 +1721,10 @@ export default function Home() {
                           {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
                           <div className="min-w-0 flex-1">
                             <div className="font-extrabold">{m.title}</div>
+                            <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
+                            <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
+                            <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
+                            <ProviderRow movieId={m.id} region={profile?.region} />
                             <TrailerButton movieId={m.id} />
                             <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                             <div className="text-[11px] text-cinema-muted mt-1">
@@ -1680,6 +1733,7 @@ export default function Home() {
                             <div className="flex gap-1 mt-1">
                               <button onClick={() => castVote(m.id, "yes")} className={"text-[11px] font-bold px-2 py-0.5 rounded-full border " + (myVote === "yes" ? "bg-cinema-green text-cinema-ink border-cinema-green" : "border-cinema-border text-cinema-muted hover:border-cinema-green hover:text-cinema-green")}>Yes</button>
                               <button onClick={() => castVote(m.id, "no")} className={"text-[11px] font-bold px-2 py-0.5 rounded-full border " + (myVote === "no" ? "bg-cinema-orange text-cinema-ink border-cinema-orange" : "border-cinema-border text-cinema-muted hover:border-cinema-orange hover:text-cinema-orange")}>No</button>
+                              <button onClick={() => castVote(m.id, "seen")} className={"text-[11px] font-bold px-2 py-0.5 rounded-full border " + (myVote === "seen" ? "bg-cinema-gold text-cinema-ink border-cinema-gold" : "border-cinema-border text-cinema-muted hover:border-cinema-gold hover:text-cinema-gold")}>Seen</button>
                             </div>
                           </div>
                         </div>
@@ -1702,13 +1756,18 @@ export default function Home() {
                         <div className="min-w-0 flex-1">
                           <div className="font-extrabold">{m.title}</div>
                           <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
+                          <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
+                          <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
+                          <ProviderRow movieId={m.id} region={profile?.region} />
                           <TrailerButton movieId={m.id} />
+                          <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                           <div className="text-[11px] text-cinema-muted mt-1">
                             Your vote: {myVote ? myVote : "haven't swiped yet"}
                           </div>
                           <div className="flex gap-1 mt-1">
                             <button onClick={() => castVote(m.id, "yes")} className={"text-[11px] font-bold px-2 py-0.5 rounded-full border " + (myVote === "yes" ? "bg-cinema-green text-cinema-ink border-cinema-green" : "border-cinema-border text-cinema-muted hover:border-cinema-green hover:text-cinema-green")}>Yes</button>
                             <button onClick={() => castVote(m.id, "no")} className={"text-[11px] font-bold px-2 py-0.5 rounded-full border " + (myVote === "no" ? "bg-cinema-orange text-cinema-ink border-cinema-orange" : "border-cinema-border text-cinema-muted hover:border-cinema-orange hover:text-cinema-orange")}>No</button>
+                            <button onClick={() => castVote(m.id, "seen")} className={"text-[11px] font-bold px-2 py-0.5 rounded-full border " + (myVote === "seen" ? "bg-cinema-gold text-cinema-ink border-cinema-gold" : "border-cinema-border text-cinema-muted hover:border-cinema-gold hover:text-cinema-gold")}>Seen</button>
                           </div>
                         </div>
                       </div>
