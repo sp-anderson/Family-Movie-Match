@@ -1557,6 +1557,7 @@ export default function Home() {
               <div className="flex gap-2">
                 <Chip active={regionInput === "CA"} onClick={() => setRegionInput("CA")}>Canada</Chip>
                 <Chip active={regionInput === "US"} onClick={() => setRegionInput("US")}>United States</Chip>
+                <Chip active={regionInput === "GB"} onClick={() => setRegionInput("GB")}>United Kingdom</Chip>
               </div>
             </div>
             <div className="mb-5">
