@@ -462,7 +462,6 @@ export default function Home() {
       setActiveRoomCode(code);
       setRoomMeta(data.meta);
       await checkInstantMatches(code);
-      setShowNightPanel(false);
       setScreen("setup");
       setServicesInput(profile?.services || []);
       setGenresInput(profile?.genres || []);
@@ -495,6 +494,10 @@ export default function Home() {
       setActiveRoomCode(code);
       setRoomMeta(data.meta);
       await checkInstantMatches(code);
+      const existing = await fetch(`/api/group?code=${encodeURIComponent(code)}`).then((r) => r.json());
+      if (existing.pool && existing.pool.movies?.length) {
+        await carryOverVotes(code, existing.pool.movies);
+      }
       setShowNightPanel(false);
       setServicesInput(profile?.services || []);
       setGenresInput(profile?.genres || []);
@@ -519,6 +522,20 @@ export default function Home() {
     setFavorites(profile.favorites || []);
     setShowNightPanel(false);
     setScreen("swipe");
+  }
+
+  function buildNightShareMessage() {
+    const url = typeof window !== "undefined" ? window.location.origin : "";
+    return `Join my Movie Night on Family Movie Match! Use code ${activeRoomCode}${url ? " at " + url : ""}`;
+  }
+  function shareNightByEmail() {
+    const body = encodeURIComponent(buildNightShareMessage());
+    const subject = encodeURIComponent("Join my Movie Night");
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  }
+  function shareNightByText() {
+    const body = encodeURIComponent(buildNightShareMessage());
+    window.location.href = `sms:?body=${body}`;
   }
 
   async function convertRoomToPermanent() {
@@ -641,6 +658,28 @@ export default function Home() {
     setScreen("swipe");
   }
 
+  async function carryOverVotes(roomCode, poolMovies) {
+    try {
+      const res = await fetch(`/api/uservotes?email=${encodeURIComponent(email)}`);
+      const data = await res.json();
+      const globalVotes = data.votes || {};
+      const latest = await fetch(`/api/group?code=${encodeURIComponent(roomCode)}`).then((r) => r.json());
+      const roomVotesForMe = {};
+      Object.entries(latest.votes || {}).forEach(([mid, byEmail]) => {
+        if (byEmail[email]) roomVotesForMe[mid] = byEmail[email];
+      });
+      for (const m of poolMovies) {
+        if (roomVotesForMe[m.id]) continue; // already voted in this room
+        const carried = globalVotes[m.id];
+        if (carried) {
+          await castVote(m.id, carried);
+        }
+      }
+    } catch {
+      // carry-over is a convenience — don't block the room if it fails
+    }
+  }
+
   async function fetchPool() {
     if (!profile) return;
     setFetchingPool(true);
@@ -712,6 +751,9 @@ export default function Home() {
         body: JSON.stringify({ code: activeRoomCode, type: "pool", payload: newPool }),
       });
       setPool(newPool);
+      if (roomMeta?.type === "movie-night") {
+        await carryOverVotes(activeRoomCode, merged);
+      }
       if (fetched.length === 0 && existingMovies.length === 0) {
         setError("TMDB didn't return any titles for this combination of services and genres — try adding more of either in Settings.");
       } else if (fetched.length === 0) {
@@ -1248,11 +1290,24 @@ export default function Home() {
 
           {roomMeta?.type === "movie-night" ? (
             <div>
-              <div className="text-sm font-bold text-cinema-gold mb-1">🎬 Movie Night — code {activeRoomCode}</div>
+              <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-1">🎬 Movie Night code</div>
+              <div className="mb-3 px-4 py-3 rounded-xl bg-cinema-bg border-2 border-cinema-gold text-center">
+                <div className="text-3xl font-extrabold text-cinema-gold tracking-[0.15em]" style={{ fontFamily: "monospace" }}>
+                  {activeRoomCode}
+                </div>
+              </div>
               <div className="text-xs text-cinema-muted mb-3">
                 {roomMeta.expiresAt
                   ? `Expires ${new Date(roomMeta.expiresAt).toLocaleDateString()}`
                   : "Made permanent — this is now a real family."}
+              </div>
+              <div className="flex flex-wrap gap-2 mb-2">
+                <button onClick={shareNightByEmail} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold">
+                  ✉️ Share via Email
+                </button>
+                <button onClick={shareNightByText} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold">
+                  💬 Share via Text
+                </button>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button onClick={exitMovieNight} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold">
@@ -1370,6 +1425,7 @@ export default function Home() {
               <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Genres you like</div>
               <div className="flex flex-wrap gap-2">{GENRES.map((g) => <Chip key={g.id} active={genresInput.includes(g.id)} onClick={() => toggleGenre(g.id)}>{g.name}</Chip>)}</div>
             </div>
+            {roomMeta?.type !== "movie-night" && (
             <div className="mb-6">
               <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">All-time favorite movies (optional)</div>
               <div className="relative mb-2">
@@ -1420,6 +1476,7 @@ export default function Home() {
                 ))}
               </div>
             </div>
+            )}
             <button onClick={handleSaveSetup} className="w-full py-2.5 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight">Save settings</button>
           </div>
         )}
@@ -1562,7 +1619,7 @@ export default function Home() {
 
             {roomMeta?.type === "movie-night" && instantMatches.length > 0 && (
               <div className="mb-6">
-                <h2 className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">
+                <h2 className="text-lg font-medium text-cinema-gold uppercase tracking-wide mb-2">
                   Already agree — no swiping needed
                 </h2>
                 <p className="text-[11px] text-cinema-mutedDark mb-2">
@@ -1631,7 +1688,7 @@ export default function Home() {
 
             {(everyoneMatches.length > 0 || perMemberMatches.some((p) => p.movies.length > 0)) && (
               <div className="mt-8 pt-6 border-t-2 border-cinema-border">
-                <h2 className="text-base font-semibold text-cinema-gold mb-4" style={displayFont}>
+                <h2 className="text-lg font-medium text-cinema-gold mb-4" style={displayFont}>
                   OTHER MATCHES IN YOUR FAMILY
                 </h2>
 
@@ -1692,7 +1749,7 @@ export default function Home() {
 
             {(historyStatusFilter === "all" || historyStatusFilter === "yes") && (
               <>
-                <h2 className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">
+                <h2 className="text-lg font-medium text-cinema-gold uppercase tracking-wide mb-2">
                   Yes ({visibleYesInVotes.length})
                 </h2>
                 <div className="space-y-3 mb-6">
@@ -1718,7 +1775,7 @@ export default function Home() {
 
             {(historyStatusFilter === "all" || historyStatusFilter === "seen") && (
               <>
-                <h2 className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">
+                <h2 className="text-lg font-medium text-cinema-gold uppercase tracking-wide mb-2">
                   Seen ({visibleSeen.length})
                 </h2>
                 <p className="text-[11px] text-cinema-mutedDark mb-2">Movies you've marked as already seen.</p>
@@ -1745,7 +1802,7 @@ export default function Home() {
 
             {(historyStatusFilter === "all" || historyStatusFilter === "no") && (
               <>
-                <h2 className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">
+                <h2 className="text-lg font-medium text-cinema-gold uppercase tracking-wide mb-2">
                   No ({visibleNoInVotes.length})
                 </h2>
                 <div className="space-y-3 mb-6">
@@ -1771,7 +1828,7 @@ export default function Home() {
 
             {(historyStatusFilter === "all" || historyStatusFilter === "review-later") && (
               <>
-                <h2 className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">
+                <h2 className="text-lg font-medium text-cinema-gold uppercase tracking-wide mb-2">
                   Review Later ({visibleReviewLater.length})
                 </h2>
                 <p className="text-[11px] text-cinema-mutedDark mb-2">Movies you skipped to decide on later — still no vote cast.</p>
@@ -1851,7 +1908,7 @@ export default function Home() {
             <p className="text-xs text-cinema-mutedDark mb-4">What everyone else in the family has said yes to.</p>
             {spotlight.length > 0 && (
               <>
-                <h2 className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">Recommended to the family</h2>
+                <h2 className="text-lg font-medium text-cinema-gold uppercase tracking-wide mb-2">Recommended to the family</h2>
                 <div className="space-y-3 mb-6">
                   {Array.from(new Set(spotlight.map((s) => s.movieId)))
                     .map((mid) => (pool ? pool.movies.find((m) => m.id === mid) : null))
@@ -1888,7 +1945,7 @@ export default function Home() {
 
             {familyYesByMember.map(({ member, movies }) => (
               <div key={member.email} className="mb-6">
-                <h2 className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">{member.name} said yes to ({movies.length})</h2>
+                <h2 className="text-lg font-medium text-cinema-gold uppercase tracking-wide mb-2">{member.name} said yes to ({movies.length})</h2>
                 {movies.length === 0 && <p className="text-cinema-mutedDark text-sm mb-2">Nothing yet.</p>}
                 <div className="space-y-3">
                   {movies.map((m) => {
