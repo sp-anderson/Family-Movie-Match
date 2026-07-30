@@ -462,6 +462,29 @@ export default function Home() {
     return age;
   }
 
+  const [showDobEdit, setShowDobEdit] = useState(false);
+
+  async function saveDobEdit() {
+    setDobError("");
+    if (!dobInput) return setDobError("Enter a date of birth.");
+    const dob = new Date(dobInput + "T00:00:00");
+    if (isNaN(dob.getTime()) || dob > new Date()) return setDobError("Enter a valid date of birth.");
+    const age = calculateAge(dobInput);
+    const isMinor = age < 13;
+    const updates = { dob: dobInput, isMinor };
+    if (!isMinor) {
+      // no longer a minor — clear the parental-consent lock entirely
+      updates.consentStatus = null;
+      updates.parentEmail = null;
+      updates.approvedRating = null;
+    } else if (!profile?.consentStatus) {
+      updates.consentStatus = "pending";
+    }
+    const merged = await saveProfile(updates);
+    setProfile(merged);
+    setShowDobEdit(false);
+  }
+
   async function submitDob() {
     setDobError("");
     if (!dobInput) return setDobError("Enter a date of birth.");
@@ -2062,6 +2085,48 @@ export default function Home() {
             <h2 className="text-xl text-cinema-gold mb-4" style={displayFont}>
               {roomMeta?.type === "movie-night" ? "Set up for this Movie Night" : "Your streaming setup"}
             </h2>
+            {roomMeta?.type !== "movie-night" && (
+              <div className="mb-5">
+                <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Date of birth</div>
+                {!showDobEdit ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-stone-50">{profile?.dob || "Not set"}</span>
+                    <button
+                      onClick={() => {
+                        setDobInput(profile?.dob || "");
+                        setDobError("");
+                        setShowDobEdit(true);
+                      }}
+                      className="text-xs font-bold px-2 py-1 rounded-lg bg-cinema-panel border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold"
+                    >
+                      Edit
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <input
+                      type="date"
+                      value={dobInput}
+                      onChange={(e) => setDobInput(e.target.value)}
+                      max={new Date().toISOString().slice(0, 10)}
+                      className="w-full mb-2 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold"
+                    />
+                    {dobError && <p className="text-cinema-orangeLight text-xs mb-2">{dobError}</p>}
+                    <div className="flex gap-2">
+                      <button onClick={saveDobEdit} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-cinema-gold text-cinema-ink hover:bg-cinema-goldLight">
+                        Save
+                      </button>
+                      <button onClick={() => setShowDobEdit(false)} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-cinema-panel border border-cinema-border text-cinema-mutedLight">
+                        Cancel
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-cinema-mutedDark mt-2">
+                      Fixing an incorrect birthdate here updates your access immediately — no need to contact support.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
             {roomMeta?.type !== "movie-night" && !profile?.isMinor && (
               <div className="mb-5">
                 <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Your role in this family</div>
