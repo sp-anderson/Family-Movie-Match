@@ -136,12 +136,12 @@ function ProviderRow({ movieId, region, inTheaters }) {
 
   if (providers === null) return <div className="text-[11px] text-cinema-mutedDark mt-1">Checking where to watch…</div>;
   if (providers.length === 0) {
-    if (inTheaters) return <div className="text-[11px] text-cinema-orange font-bold mt-1">🎬 Now playing in theaters</div>;
+    if (inTheaters) return <div className="text-[11px] text-cinema-orange font-bold mt-1">Now playing in theaters</div>;
     return <div className="text-[11px] text-cinema-mutedDark mt-1">Not currently on any of your services.</div>;
   }
   return (
     <div className="flex flex-wrap gap-1 mt-1">
-      {inTheaters && <span className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-orange/20 text-cinema-orange font-bold">🎬 In theaters</span>}
+      {inTheaters && <span className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-orange/20 text-cinema-orange font-bold">In theaters</span>}
       {providers.map((p) => (
         <span key={p.id} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-green/20 text-cinema-green font-bold">
           {p.name}
@@ -593,6 +593,11 @@ export default function Home() {
   const [soloSearch, setSoloSearch] = useState("");
 
   const [error, setError] = useState("");
+  useEffect(() => {
+    if (!error) return;
+    const t = setTimeout(() => setError(""), 6000);
+    return () => clearTimeout(t);
+  }, [error]);
   const [fetchingPool, setFetchingPool] = useState(false);
   const [trailers, setTrailers] = useState({});
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -689,7 +694,8 @@ export default function Home() {
       // were promoted/demoted by another parent via the Family tab (that
       // only ever updates the shared member record, not your own profile)
       const myFamilyRec = ((familyData && familyData.members) || []).find((m) => m.email === email);
-      setRoleInput(myFamilyRec?.role || data.profile.role || "child");
+      const ageBasedDefaultRole = data.profile.dob && calculateAge(data.profile.dob) >= 18 ? "parent" : "child";
+      setRoleInput(myFamilyRec?.role || data.profile.role || ageBasedDefaultRole);
 
       if (data.profile.isMinor && data.profile.consentStatus === "approved" && familyData?.members) {
         const myRec = familyData.members.find((m) => m.email === email);
@@ -939,9 +945,7 @@ export default function Home() {
     setFamilyMembers((data && data.members) || []);
     setActiveRoomCode(group);
     setRoomMeta({ type: "family" });
-    if (data && (data.members || []).length === 0) {
-      setRoleInput("parent"); // first person in a brand-new family — needs to be able to set up parental controls
-    }
+    setRoleInput(merged?.dob && calculateAge(merged.dob) >= 18 ? "parent" : "child");
     setScreen("setup");
   }
 
@@ -988,23 +992,19 @@ export default function Home() {
   async function handleSaveSetup() {
     setError("");
     if (!servicesInput.length) return setError("Pick at least one streaming service.");
-    if (!genresInput.length) return setError("Pick at least one genre you're into.");
 
     const inOwnFamily = activeRoomCode === profile.group;
 
     if (inOwnFamily) {
       const existingSelf = members.find((m) => m.email === email);
-      const otherParentsExist = members.some((m) => m.role === "parent" && m.email !== email);
-      const iAmAlreadyParent = existingSelf?.role === "parent";
-      const roleLocked = otherParentsExist && !iAmAlreadyParent;
-      let finalRole = roleLocked ? "child" : roleInput;
+      let finalRole = roleLockedForMe ? "child" : roleInput;
       let finalMaxRating = existingSelf?.maxRating;
       if (profile?.isMinor) {
         finalRole = "child"; // minors are always "child" — never self-promotable regardless of family parent state
         finalMaxRating = profile.consentStatus === "approved" ? profile.approvedRating : "G";
       }
-      if (roleLocked && roleInput === "parent" && !profile?.isMinor) {
-        setError("This family already has a parent — ask them to promote you from the Family tab.");
+      if (roleLockedForMe && roleInput === "parent" && !profile?.isMinor) {
+        setError(`You need to be ${PARENT_ROLE_MIN_AGE}+ to be set as a parent — an existing parent can promote you from the Family tab if they choose to.`);
         return;
       }
       await saveProfile({ region: regionInput, role: finalRole, services: servicesInput, genres: genresInput, favorites, wantsTheaters: wantsTheatersInput });
@@ -1172,7 +1172,12 @@ export default function Home() {
     : myFamilyMember && myFamilyMember.role === "child"
     ? myFamilyMember.maxRating
     : null;
-  const roleLockedForMe = members.some((m) => m.role === "parent" && m.email !== email) && myMember?.role !== "parent";
+  const PARENT_ROLE_MIN_AGE = 18;
+  const myAge = profile?.dob ? calculateAge(profile.dob) : null;
+  const isAdultByAge = myAge !== null && myAge >= PARENT_ROLE_MIN_AGE;
+  // under 18 can never self-select "parent," regardless of who else is in the family —
+  // an existing parent can still deliberately promote them from the Family tab if they choose to
+  const roleLockedForMe = myAge !== null && !isAdultByAge;
 
   useEffect(() => {
     if (!myMaxRating || !pool) return;
@@ -1844,6 +1849,16 @@ export default function Home() {
           </div>
         </div>
       )}
+      {error && (
+        <div className="fixed top-4 left-4 right-4 z-50 max-w-sm mx-auto">
+          <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-cinema-orange/95 border border-cinema-orange text-white text-sm shadow-2xl">
+            <span className="flex-1">{error}</span>
+            <button onClick={() => setError("")} className="flex-shrink-0 font-bold hover:opacity-70" aria-label="Dismiss">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
       {celebration && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-6"
@@ -1982,8 +1997,6 @@ export default function Home() {
       )}
 
       <div className="p-5 max-w-2xl mx-auto">
-        {error && <div className="mb-4 px-4 py-2 rounded-lg bg-cinema-orange/15 border border-cinema-orange text-cinema-orangeLight text-sm">{error}</div>}
-
         {screen === "dob" && (
           <div className="max-w-sm mx-auto py-8">
             <h2 className="text-xl text-cinema-gold mb-2" style={displayFont}>One quick thing first</h2>
@@ -2207,7 +2220,7 @@ export default function Home() {
             <div className="mb-5">
               <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Going out to the movies?</div>
               <Chip active={wantsTheatersInput} onClick={() => setWantsTheatersInput((v) => !v)}>
-                🎬 Include what's currently in theaters
+                Include what's currently in theaters
               </Chip>
             </div>
             <div className="mb-5">
