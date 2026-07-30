@@ -1485,6 +1485,10 @@ export default function Home() {
     setRatingPromptMovie(null);
   }
 
+  function dismissRatingPrompt() {
+    setRatingPromptMovie(null);
+  }
+
   function castVoteWithPrompt(movie, choice) {
     castVote(movie.id, choice);
     if (choice === "seen") setRatingPromptMovie(movie);
@@ -1813,42 +1817,6 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-cinema-bg text-stone-50" style={bodyFont}>
-      {ratingPromptMovie && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 bg-cinema-panel border-t-2 border-cinema-gold px-5 py-4 shadow-2xl">
-          <div className="max-w-sm mx-auto">
-            <div className="flex items-start gap-3 mb-3">
-              {ratingPromptMovie.poster_path && (
-                <img
-                  src={`https://image.tmdb.org/t/p/w92${ratingPromptMovie.poster_path}`}
-                  alt={ratingPromptMovie.title}
-                  className="w-12 h-18 object-cover rounded flex-shrink-0"
-                />
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="text-xs font-bold text-cinema-mutedLight uppercase tracking-wide">How was it?</div>
-                <div className="font-extrabold text-stone-50 truncate">{ratingPromptMovie.title}</div>
-              </div>
-              <button onClick={() => setRatingPromptMovie(null)} className="text-cinema-mutedDark hover:text-stone-50 flex-shrink-0" aria-label="Dismiss">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="grid grid-cols-4 gap-2">
-              <button onClick={() => saveRating(ratingPromptMovie, 1)} className="py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-orangeLight text-xs font-bold hover:border-cinema-orange">
-                Not for me
-              </button>
-              <button onClick={() => saveRating(ratingPromptMovie, 2)} className="py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-mutedLight text-xs font-bold hover:border-cinema-mutedLight">
-                It was okay
-              </button>
-              <button onClick={() => saveRating(ratingPromptMovie, 3)} className="py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-green text-xs font-bold hover:border-cinema-green">
-                Liked it
-              </button>
-              <button onClick={() => saveRating(ratingPromptMovie, 4)} className="py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-gold text-xs font-bold hover:border-cinema-gold">
-                ★ Favorite
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {error && (
         <div className="fixed top-4 left-4 right-4 z-50 max-w-sm mx-auto">
           <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-cinema-orange/95 border border-cinema-orange text-white text-sm shadow-2xl">
@@ -2303,36 +2271,39 @@ export default function Home() {
                 </button>
               </div>
             )}
-            {pool && !currentMovie && ratingCheckPending && (
+            {pool && !currentMovie && !ratingPromptMovie && ratingCheckPending && (
               <div className="text-center py-10">
                 <p className="text-cinema-muted text-sm">Checking ratings on a few more titles…</p>
               </div>
             )}
-            {pool && currentMovie && (
+            {pool && (ratingPromptMovie || currentMovie) && (() => {
+              const displayMovie = ratingPromptMovie || currentMovie;
+              const rating = ratingPromptMovie ? true : false;
+              return (
               <div>
                 <div className="text-center text-xs text-cinema-mutedDark mb-2 font-bold">{deck.length} left in your stack</div>
                 <div
                   ref={cardRef}
-                  onPointerDown={onPointerDown}
-                  onPointerMove={onPointerMove}
-                  onPointerUp={onPointerEnd}
-                  onPointerCancel={onPointerEnd}
+                  onPointerDown={rating ? undefined : onPointerDown}
+                  onPointerMove={rating ? undefined : onPointerMove}
+                  onPointerUp={rating ? undefined : onPointerEnd}
+                  onPointerCancel={rating ? undefined : onPointerEnd}
                   style={{
-                    transform: `translateX(${dragX}px) rotate(${rotation}deg)`,
+                    transform: rating ? "none" : `translateX(${dragX}px) rotate(${rotation}deg)`,
                     transition: draggingRef.current ? "none" : "transform 0.2s ease",
-                    touchAction: "pan-y",
+                    touchAction: rating ? "auto" : "pan-y",
                   }}
-                  className="rounded-2xl bg-cinema-card text-cinema-ink overflow-hidden shadow-xl cursor-grab active:cursor-grabbing select-none"
+                  className={"rounded-2xl bg-cinema-card text-cinema-ink overflow-hidden shadow-xl select-none" + (rating ? "" : " cursor-grab active:cursor-grabbing")}
                 >
                   <div className="relative w-full aspect-[2/3] bg-stone-200">
-                    {isNewRelease(currentMovie.release_date) && <NewBadge />}
-                    {currentMovie._inTheaters && <TheaterBadge />}
-                    {currentMovie.poster_path ? (
-                      <img src={`https://image.tmdb.org/t/p/w500${currentMovie.poster_path}`} alt={currentMovie.title} className="w-full h-full object-cover pointer-events-none" draggable={false} />
+                    {isNewRelease(displayMovie.release_date) && <NewBadge />}
+                    {displayMovie._inTheaters && <TheaterBadge />}
+                    {displayMovie.poster_path ? (
+                      <img src={`https://image.tmdb.org/t/p/w500${displayMovie.poster_path}`} alt={displayMovie.title} className="w-full h-full object-cover pointer-events-none" draggable={false} />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-cinema-mutedDark">No poster</div>
                     )}
-                    {dragX < 0 && (
+                    {!rating && dragX < 0 && (
                       <div
                         className="absolute inset-0 flex items-center justify-center pointer-events-none"
                         style={{ opacity: Math.min(1, Math.abs(dragX) / 100) }}
@@ -2340,7 +2311,7 @@ export default function Home() {
                         <X className="w-40 h-40 text-cinema-orange -rotate-12" strokeWidth={4} style={{ filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.5))" }} />
                       </div>
                     )}
-                    {dragX > 0 && (
+                    {!rating && dragX > 0 && (
                       <div
                         className="absolute inset-0 flex items-center justify-center pointer-events-none"
                         style={{ opacity: Math.min(1, Math.abs(dragX) / 100) }}
@@ -2348,63 +2319,97 @@ export default function Home() {
                         <Heart className="w-40 h-40 text-cinema-green rotate-12" fill="currentColor" style={{ filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.5))" }} />
                       </div>
                     )}
-                    <button
-                      onClick={() => commitSwipe("no")}
-                      className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/40 hover:bg-cinema-orange/80 text-white flex items-center justify-center backdrop-blur-sm"
-                      aria-label="No"
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={() => commitSwipe("yes")}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/40 hover:bg-cinema-green/80 text-white flex items-center justify-center backdrop-blur-sm"
-                      aria-label="Yes"
-                    >
-                      <Heart className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={markSeen}
-                      className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 px-3 py-1.5 rounded-full bg-black/40 hover:bg-black/60 text-white text-xs font-bold backdrop-blur-sm"
-                    >
-                      <Eye className="w-3.5 h-3.5" /> Already seen it
-                    </button>
+                    {!rating && (
+                      <>
+                        <button
+                          onClick={() => commitSwipe("no")}
+                          className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/40 hover:bg-cinema-orange/80 text-white flex items-center justify-center backdrop-blur-sm"
+                          aria-label="No"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={() => commitSwipe("yes")}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/40 hover:bg-cinema-green/80 text-white flex items-center justify-center backdrop-blur-sm"
+                          aria-label="Yes"
+                        >
+                          <Heart className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={markSeen}
+                          className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 px-3 py-1.5 rounded-full bg-black/40 hover:bg-black/60 text-white text-xs font-bold backdrop-blur-sm"
+                        >
+                          <Eye className="w-3.5 h-3.5" /> Already seen it
+                        </button>
+                      </>
+                    )}
+                    {rating && (
+                      <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-end pb-4 gap-2.5">
+                        <div className="bg-cinema-panel rounded-full p-1 flex gap-1 border border-cinema-border">
+                          <button onClick={() => saveRating(ratingPromptMovie, 1)} className="flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-full hover:bg-cinema-orange/20">
+                            <X className="w-4 h-4 text-cinema-orangeLight" />
+                            <span className="text-[9px] text-stone-50">Not for me</span>
+                          </button>
+                          <button onClick={() => saveRating(ratingPromptMovie, 2)} className="flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-full hover:bg-cinema-border">
+                            <span className="w-4 h-4 flex items-center justify-center text-cinema-mutedLight font-bold">–</span>
+                            <span className="text-[9px] text-stone-50">Okay</span>
+                          </button>
+                          <button onClick={() => saveRating(ratingPromptMovie, 3)} className="flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-full hover:bg-cinema-green/20">
+                            <Heart className="w-4 h-4 text-cinema-green" />
+                            <span className="text-[9px] text-stone-50">Liked it</span>
+                          </button>
+                          <button onClick={() => saveRating(ratingPromptMovie, 4)} className="flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-full hover:bg-cinema-gold/20">
+                            <Star className="w-4 h-4 text-cinema-gold" fill="currentColor" />
+                            <span className="text-[9px] text-stone-50">Favorite</span>
+                          </button>
+                        </div>
+                        <button onClick={dismissRatingPrompt} className="text-[11px] text-cinema-mutedLight font-bold px-2 py-1">
+                          Not now
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div className="p-4">
-                    <div className="font-extrabold text-lg leading-snug">{currentMovie.title}</div>
-                    {currentMovieNudges.length > 0 && (
+                    <div className="font-extrabold text-lg leading-snug">{displayMovie.title}</div>
+                    {!rating && currentMovieNudges.length > 0 && (
                       <div className="text-xs text-cinema-gold font-bold mb-1">
                         {currentMovieNudges.map((n) => n.byName).join(", ")} want{currentMovieNudges.length === 1 ? "s" : ""} to watch this
                       </div>
                     )}
-                    {currentMovie._because && (
-                      <div className="text-xs text-cinema-orange font-bold mb-1">Because {currentMovie._becauseName || "your family"} liked {currentMovie._because}</div>
+                    {displayMovie._because && (
+                      <div className="text-xs text-cinema-orange font-bold mb-1">Because {displayMovie._becauseName || "your family"} liked {displayMovie._because}</div>
                     )}
-                    <div className="flex flex-wrap gap-1 mt-1 mb-2">{genreNames(currentMovie.genre_ids).map((g) => <span key={g} className="text-[11px] px-2 py-0.5 rounded-full bg-cinema-ink/10 text-cinema-ink font-bold">{g}</span>)}</div>
-                    <DetailsRow movie={currentMovie} certifications={certifications} setCertifications={setCertifications} />
-                    <p className="text-sm text-cinema-ink leading-snug">{currentMovie.overview}</p>
-                    {trailers[currentMovie.id] && (
-                      <a href={`https://www.youtube.com/watch?v=${trailers[currentMovie.id]}`} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-sm font-bold text-cinema-orange hover:text-cinema-orangeLight">
+                    <div className="flex flex-wrap gap-1 mt-1 mb-2">{genreNames(displayMovie.genre_ids).map((g) => <span key={g} className="text-[11px] px-2 py-0.5 rounded-full bg-cinema-ink/10 text-cinema-ink font-bold">{g}</span>)}</div>
+                    <DetailsRow movie={displayMovie} certifications={certifications} setCertifications={setCertifications} />
+                    <p className="text-sm text-cinema-ink leading-snug">{displayMovie.overview}</p>
+                    {trailers[displayMovie.id] && (
+                      <a href={`https://www.youtube.com/watch?v=${trailers[displayMovie.id]}`} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-sm font-bold text-cinema-orange hover:text-cinema-orangeLight">
                         <Play className="w-4 h-4" /> Watch trailer
                       </a>
                     )}
-                    <SpotlightControl movieId={currentMovie.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} hideLabel={currentMovieNudges.length > 0} />
+                    <SpotlightControl movieId={displayMovie.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} hideLabel={currentMovieNudges.length > 0} />
                   </div>
                 </div>
-                <div className="flex items-center justify-center gap-4 mt-3 text-xs text-cinema-mutedDark">
-                  <span>← swipe or tap for no</span>
-                  <span>swipe or tap for yes →</span>
-                </div>
-                <div className="flex justify-center mt-2">
-                  <button
-                    onClick={skipCurrent}
-                    className="text-xs font-bold px-3 py-1.5 rounded-full bg-cinema-panel border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold"
-                  >
-                    ⏭ Skip for now — review later
-                  </button>
-                </div>
+                {!rating && (
+                  <>
+                    <div className="flex items-center justify-center gap-4 mt-3 text-xs text-cinema-mutedDark">
+                      <span>← swipe or tap for no</span>
+                      <span>swipe or tap for yes →</span>
+                    </div>
+                    <div className="flex justify-center mt-2">
+                      <button
+                        onClick={skipCurrent}
+                        className="text-xs font-bold px-3 py-1.5 rounded-full bg-cinema-panel border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold"
+                      >
+                        Skip for now — review later
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
-            )}
-            {pool && !currentMovie && !ratingCheckPending && (
+              );
+            })()}
+            {pool && !currentMovie && !ratingPromptMovie && !ratingCheckPending && (
               <div className="text-center py-10">
                 <p className="text-cinema-muted mb-4 text-sm">You've swiped through the whole stack. Check Matches, or pull a fresh batch.</p>
                 <button onClick={fetchPool} disabled={fetchingPool} className="px-5 py-2.5 rounded-lg bg-cinema-panel text-stone-50 font-bold hover:bg-cinema-border inline-flex items-center gap-2">
