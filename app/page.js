@@ -357,6 +357,7 @@ export default function Home() {
   const displayFont = { fontFamily: "'Bebas Neue', sans-serif", letterSpacing: "0.04em" };
 
   const [profile, setProfile] = useState(null);
+  const [screen, setScreen] = useState("join");
   const [members, setMembers] = useState([]);
   const [pool, setPool] = useState(null);
   const [votes, setVotes] = useState({});
@@ -525,7 +526,6 @@ export default function Home() {
   const [soloAvailabilityFilter, setSoloAvailabilityFilter] = useState([]);
   const [soloSearch, setSoloSearch] = useState("");
 
-  const [screen, setScreen] = useState("join");
   const [error, setError] = useState("");
   const [fetchingPool, setFetchingPool] = useState(false);
   const [trailers, setTrailers] = useState({});
