@@ -1075,6 +1075,19 @@ export default function Home() {
       const nudged = (myVote === "no" || myVote === "seen") && nudgeRecommenders(m.id).length > 0 && !reconsidered.has(m.id);
       return nudged;
     });
+    // your deck only shows movies matching YOUR OWN selected genres — not the
+    // shared family pool's broader union — unless a family member already
+    // said yes to it, in which case it crosses that boundary so a match is
+    // still possible
+    const myGenres = profile?.genres || [];
+    if (myGenres.length) {
+      movies = movies.filter((m) => {
+        const matchesMyGenres = (m.genre_ids || []).some((g) => myGenres.includes(g));
+        if (matchesMyGenres) return true;
+        const familyMateSaidYes = Object.entries(votes[m.id] || {}).some(([memberEmail, choice]) => memberEmail !== email && choice === "yes");
+        return familyMateSaidYes;
+      });
+    }
     if (myMaxRating) {
       const maxRank = ratingRank(myMaxRating);
       movies = movies.filter((m) => {
@@ -1091,7 +1104,7 @@ export default function Home() {
     }
     return movies;
     // eslint-disable-next-line
-  }, [pool, myVotedIds, myMaxRating, certifications, votes, email, spotlight, reconsidered, skippedOrder]);
+  }, [pool, myVotedIds, myMaxRating, certifications, votes, email, spotlight, reconsidered, skippedOrder, profile?.genres]);
   const currentMovie = deck[0];
   const currentMovieNudges = currentMovie ? nudgeRecommenders(currentMovie.id) : [];
 
