@@ -74,7 +74,7 @@ function NewBadge() {
 function TheaterBadge() {
   return (
     <span className="absolute top-2 right-2 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-cinema-orange text-cinema-ink shadow">
-      🎬 IN THEATERS
+      IN THEATERS
     </span>
   );
 }
@@ -348,6 +348,94 @@ export default function Home() {
   const [showNightPanel, setShowNightPanel] = useState(false);
   const [nightJoinInput, setNightJoinInput] = useState("");
   const [nightError, setNightError] = useState("");
+  const [magicLinkEmail, setMagicLinkEmail] = useState("");
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const [magicLinkError, setMagicLinkError] = useState("");
+  const [magicLinkBusy, setMagicLinkBusy] = useState(false);
+  const [showEmailForm, setShowEmailForm] = useState(false);
+
+  async function sendMagicLink() {
+    setMagicLinkError("");
+    const addr = magicLinkEmail.trim().toLowerCase();
+    if (!addr.includes("@")) return setMagicLinkError("Enter a valid email address.");
+    setMagicLinkBusy(true);
+    try {
+      const res = await fetch("/api/magic-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: addr }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMagicLinkError(data.error || "Couldn't send the link. Try again.");
+      } else {
+        setMagicLinkSent(true);
+      }
+    } catch {
+      setMagicLinkError("Couldn't send the link. Try again.");
+    }
+    setMagicLinkBusy(false);
+  }
+
+  const [dobInput, setDobInput] = useState("");
+  const [dobError, setDobError] = useState("");
+  const [parentEmailInput, setParentEmailInput] = useState("");
+  const [parentConsentError, setParentConsentError] = useState("");
+  const [parentConsentSent, setParentConsentSent] = useState(false);
+  const [parentConsentBusy, setParentConsentBusy] = useState(false);
+
+  function calculateAge(dobString) {
+    const dob = new Date(dobString + "T00:00:00");
+    const today = new Date();
+    let age = today.getFullYear() - dob.getFullYear();
+    const m = today.getMonth() - dob.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+    return age;
+  }
+
+  async function submitDob() {
+    setDobError("");
+    if (!dobInput) return setDobError("Enter a date of birth.");
+    const dob = new Date(dobInput + "T00:00:00");
+    if (isNaN(dob.getTime()) || dob > new Date()) return setDobError("Enter a valid date of birth.");
+    const age = calculateAge(dobInput);
+    const isMinor = age < 13;
+    const merged = await saveProfile({ dob: dobInput, isMinor, consentStatus: isMinor ? "pending" : null });
+    setProfile(merged);
+    setScreen(isMinor ? "parent-consent" : "join");
+  }
+
+  async function submitParentConsent() {
+    setParentConsentError("");
+    const addr = parentEmailInput.trim().toLowerCase();
+    if (!addr.includes("@")) return setParentConsentError("Enter a valid parent/guardian email.");
+    setParentConsentBusy(true);
+    try {
+      const merged = await saveProfile({ parentEmail: addr });
+      setProfile(merged);
+      const res = await fetch("/api/consent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "request",
+          childEmail: email,
+          childName: displayName,
+          childGroup: profile?.group || null,
+          parentEmail: addr,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setParentConsentError(data.error || "Couldn't send the request. Try again.");
+      } else {
+        setParentConsentSent(true);
+      }
+    } catch {
+      setParentConsentError("Couldn't send the request. Try again.");
+    }
+    setParentConsentBusy(false);
+  }
+
   const [nightBusy, setNightBusy] = useState(false);
   const [nightCopied, setNightCopied] = useState(null); // "code" | "message" | null
   const [instantMatches, setInstantMatches] = useState([]); // movies both people in a movie-night already said yes to, historically
@@ -432,40 +520,59 @@ export default function Home() {
       setLoadingProfile(true);
       const res = await fetch(`/api/profile?email=${encodeURIComponent(email)}`);
       const data = await res.json();
-      if (data.profile) {
-        setProfile(data.profile);
-        setRegionInput(data.profile.region || "CA");
-        setWantsTheatersInput(data.profile.wantsTheaters || false);
-        setRoleInput(data.profile.role || "child");
-        setServicesInput(data.profile.services || []);
-        setGenresInput(data.profile.genres || []);
-        setFavorites(data.profile.favorites || []);
 
-        const familyData = await loadGroup(data.profile.group);
-        setFamilyMembers((familyData && familyData.members) || []);
+      if (!data.profile || !data.profile.dob) {
+        // brand new sign-up, or an existing account from before this feature — DOB first
+        setProfile(data.profile || null);
+        setScreen("dob");
+        setLoadingProfile(false);
+        return;
+      }
 
-        const roomCode = data.profile.currentRoom || data.profile.group;
-        if (roomCode === data.profile.group) {
+      setProfile(data.profile);
+
+      if (data.profile.isMinor && !data.profile.parentEmail) {
+        setScreen("parent-consent");
+        setLoadingProfile(false);
+        return;
+      }
+
+      setRegionInput(data.profile.region || "CA");
+      setWantsTheatersInput(data.profile.wantsTheaters || false);
+      setRoleInput(data.profile.role || "child");
+      setServicesInput(data.profile.services || []);
+      setGenresInput(data.profile.genres || []);
+      setFavorites(data.profile.favorites || []);
+
+      const familyData = await loadGroup(data.profile.group);
+      setFamilyMembers((familyData && familyData.members) || []);
+
+      if (data.profile.isMinor && data.profile.consentStatus === "approved" && familyData?.members) {
+        const myRec = familyData.members.find((m) => m.email === email);
+        if (myRec && myRec.maxRating !== data.profile.approvedRating) {
+          await saveMember(data.profile.group, { ...myRec, role: "child", maxRating: data.profile.approvedRating });
+        }
+      }
+
+      const roomCode = data.profile.currentRoom || data.profile.group;
+      if (roomCode === data.profile.group) {
+        setActiveRoomCode(data.profile.group);
+        setRoomMeta({ type: "family" });
+      } else {
+        const roomRes = await fetch(`/api/room?code=${encodeURIComponent(roomCode)}`);
+        const roomData = await roomRes.json();
+        if (roomData.meta && (!roomData.meta.expiresAt || roomData.meta.expiresAt > Date.now())) {
+          setActiveRoomCode(roomCode);
+          setRoomMeta(roomData.meta);
+          await loadGroup(roomCode);
+        } else {
+          // room expired or vanished — fall back to the permanent family
           setActiveRoomCode(data.profile.group);
           setRoomMeta({ type: "family" });
-        } else {
-          const roomRes = await fetch(`/api/room?code=${encodeURIComponent(roomCode)}`);
-          const roomData = await roomRes.json();
-          if (roomData.meta && (!roomData.meta.expiresAt || roomData.meta.expiresAt > Date.now())) {
-            setActiveRoomCode(roomCode);
-            setRoomMeta(roomData.meta);
-            await loadGroup(roomCode);
-          } else {
-            // room expired or vanished — fall back to the permanent family
-            setActiveRoomCode(data.profile.group);
-            setRoomMeta({ type: "family" });
-          }
         }
-
-        setScreen(data.profile.services?.length && data.profile.genres?.length ? "swipe" : "setup");
-      } else {
-        setScreen("join");
       }
+
+      setScreen(data.profile.services?.length && data.profile.genres?.length ? "swipe" : "setup");
       setLoadingProfile(false);
     })();
   }, [status, email]);
@@ -742,15 +849,20 @@ export default function Home() {
       const otherParentsExist = members.some((m) => m.role === "parent" && m.email !== email);
       const iAmAlreadyParent = existingSelf?.role === "parent";
       const roleLocked = otherParentsExist && !iAmAlreadyParent;
-      const finalRole = roleLocked ? "child" : roleInput;
-      if (roleLocked && roleInput === "parent") {
+      let finalRole = roleLocked ? "child" : roleInput;
+      let finalMaxRating = existingSelf?.maxRating;
+      if (profile?.isMinor) {
+        finalRole = "child"; // minors are always "child" — never self-promotable regardless of family parent state
+        finalMaxRating = profile.consentStatus === "approved" ? profile.approvedRating : "G";
+      }
+      if (roleLocked && roleInput === "parent" && !profile?.isMinor) {
         setError("This family already has a parent — ask them to promote you from the Family tab.");
         return;
       }
       await saveProfile({ region: regionInput, role: finalRole, services: servicesInput, genres: genresInput, favorites, wantsTheaters: wantsTheatersInput });
-      await saveMember(activeRoomCode, { name: displayName, email, role: finalRole, services: servicesInput, genres: genresInput, favorites, wantsTheaters: wantsTheatersInput });
+      await saveMember(activeRoomCode, { name: displayName, email, role: finalRole, maxRating: finalMaxRating, services: servicesInput, genres: genresInput, favorites, wantsTheaters: wantsTheatersInput });
       setFamilyMembers((prev) => {
-        const rec = { name: displayName, email, role: finalRole, services: servicesInput, genres: genresInput, favorites, wantsTheaters: wantsTheatersInput };
+        const rec = { name: displayName, email, role: finalRole, maxRating: finalMaxRating, services: servicesInput, genres: genresInput, favorites, wantsTheaters: wantsTheatersInput };
         const idx = prev.findIndex((m) => m.email === email);
         if (idx >= 0) {
           const copy = [...prev];
@@ -906,7 +1018,12 @@ export default function Home() {
 
   const myMember = members.find((m) => m.email === email); // active room's record (for room-scoped role UI)
   const myFamilyMember = familyMembers.find((m) => m.email === email); // permanent family record — source of truth for safety
-  const myMaxRating = myFamilyMember && myFamilyMember.role === "child" ? myFamilyMember.maxRating : null;
+  const isPendingMinor = profile?.isMinor && profile?.consentStatus !== "approved";
+  const myMaxRating = isPendingMinor
+    ? "G"
+    : myFamilyMember && myFamilyMember.role === "child"
+    ? myFamilyMember.maxRating
+    : null;
   const roleLockedForMe = members.some((m) => m.role === "parent" && m.email !== email) && myMember?.role !== "parent";
 
   useEffect(() => {
@@ -1411,13 +1528,58 @@ export default function Home() {
   if (status !== "authenticated") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-cinema-bg text-stone-50" style={bodyFont}>
-        <div className="text-center">
+        <div className="text-center max-w-xs w-full px-4">
           <div className="flex items-center justify-center gap-2 mb-4">
             <Film className="w-8 h-8 text-cinema-gold" />
             <h1 className="text-3xl text-cinema-gold" style={displayFont}>Family Movie Match</h1>
           </div>
-          <p className="text-cinema-muted mb-6 max-w-xs mx-auto text-sm">Sign in with Google to link up with your family and start swiping.</p>
-          <button onClick={() => signIn("google")} className="px-6 py-2.5 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight">Sign in with Google</button>
+          <p className="text-cinema-muted mb-6 text-sm">Sign in to link up with your family and start swiping.</p>
+
+          {!showEmailForm && (
+            <div className="space-y-2">
+              <button onClick={() => signIn("google")} className="w-full px-6 py-2.5 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight">
+                Continue with Google
+              </button>
+              <button onClick={() => signIn("apple")} className="w-full px-6 py-2.5 rounded-lg bg-stone-50 text-cinema-ink font-extrabold hover:bg-stone-200">
+                 Continue with Apple
+              </button>
+              <button onClick={() => setShowEmailForm(true)} className="w-full px-6 py-2.5 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 font-extrabold hover:border-cinema-gold">
+                Continue with Email
+              </button>
+              <p className="text-[11px] text-cinema-mutedDark pt-2">No passwords here — email sign-in sends a one-time link instead.</p>
+            </div>
+          )}
+
+          {showEmailForm && !magicLinkSent && (
+            <div className="space-y-2">
+              <input
+                value={magicLinkEmail}
+                onChange={(e) => setMagicLinkEmail(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && sendMagicLink()}
+                placeholder="you@example.com"
+                type="email"
+                className="w-full px-3 py-2.5 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold text-center"
+              />
+              {magicLinkError && <p className="text-cinema-orangeLight text-xs">{magicLinkError}</p>}
+              <button
+                onClick={sendMagicLink}
+                disabled={magicLinkBusy}
+                className="w-full px-6 py-2.5 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight disabled:opacity-50"
+              >
+                {magicLinkBusy ? "Sending…" : "Send me a sign-in link"}
+              </button>
+              <button onClick={() => setShowEmailForm(false)} className="text-xs text-cinema-mutedDark font-bold">
+                ← Back
+              </button>
+            </div>
+          )}
+
+          {showEmailForm && magicLinkSent && (
+            <div className="px-4 py-6 rounded-lg bg-cinema-panel border border-cinema-border">
+              <p className="text-sm font-bold text-cinema-gold mb-1">Check your email</p>
+              <p className="text-xs text-cinema-muted">We sent a sign-in link to {magicLinkEmail}. It's good for 15 minutes.</p>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1449,6 +1611,11 @@ export default function Home() {
             <div className="text-xl font-extrabold text-stone-50">{celebration.title}</div>
             <div className="text-sm text-cinema-muted mt-1">Everyone in the family said yes 🎉</div>
           </div>
+        </div>
+      )}
+      {isPendingMinor && profile?.group && (
+        <div className="px-5 py-2 bg-cinema-gold/15 border-b border-cinema-gold text-center text-xs font-bold text-cinema-gold">
+          Waiting on parent approval — showing G-rated titles only for now
         </div>
       )}
       <div className="px-5 pt-5 pb-3 flex items-center justify-between border-b border-cinema-border/60">
@@ -1566,6 +1733,70 @@ export default function Home() {
       <div className="p-5 max-w-2xl mx-auto">
         {error && <div className="mb-4 px-4 py-2 rounded-lg bg-cinema-orange/15 border border-cinema-orange text-cinema-orangeLight text-sm">{error}</div>}
 
+        {screen === "dob" && (
+          <div className="max-w-sm mx-auto py-8">
+            <h2 className="text-xl text-cinema-gold mb-2" style={displayFont}>One quick thing first</h2>
+            <p className="text-cinema-muted mb-5 text-sm">We ask everyone's date of birth so we can keep content age-appropriate.</p>
+            <label className="text-xs font-bold text-cinema-muted uppercase tracking-wide">Date of birth</label>
+            <input
+              type="date"
+              value={dobInput}
+              onChange={(e) => setDobInput(e.target.value)}
+              max={new Date().toISOString().slice(0, 10)}
+              className="w-full mt-1 mb-2 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold"
+            />
+            {dobError && <p className="text-cinema-orangeLight text-xs mb-3">{dobError}</p>}
+            <button onClick={submitDob} className="w-full py-2.5 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight">
+              Continue
+            </button>
+          </div>
+        )}
+
+        {screen === "parent-consent" && (
+          <div className="max-w-sm mx-auto py-8">
+            {!parentConsentSent ? (
+              <>
+                <h2 className="text-xl text-cinema-gold mb-2" style={displayFont}>Almost there</h2>
+                <p className="text-cinema-muted mb-5 text-sm">
+                  Since you're under 13, we need a parent or guardian to approve your account. You can start using the app
+                  right away with G-rated titles only — full access unlocks once they approve.
+                </p>
+                <label className="text-xs font-bold text-cinema-muted uppercase tracking-wide">Parent/guardian email</label>
+                <input
+                  type="email"
+                  value={parentEmailInput}
+                  onChange={(e) => setParentEmailInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && submitParentConsent()}
+                  placeholder="parent@example.com"
+                  className="w-full mt-1 mb-2 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold"
+                />
+                {parentConsentError && <p className="text-cinema-orangeLight text-xs mb-3">{parentConsentError}</p>}
+                <button
+                  onClick={submitParentConsent}
+                  disabled={parentConsentBusy}
+                  className="w-full py-2.5 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight disabled:opacity-50"
+                >
+                  {parentConsentBusy ? "Sending…" : "Send request & continue"}
+                </button>
+                <p className="text-[11px] text-cinema-mutedDark mt-3">
+                  We won't collect anything beyond this email until they approve.
+                </p>
+              </>
+            ) : (
+              <div className="text-center">
+                <h2 className="text-xl text-cinema-gold mb-2" style={displayFont}>Request sent!</h2>
+                <p className="text-cinema-muted mb-5 text-sm">
+                  We emailed {parentEmailInput} for approval. You can keep going now — everything's limited to G-rated
+                  titles until they approve.
+                </p>
+                <button onClick={() => setScreen("join")} className="w-full py-2.5 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight">
+                  Continue
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {screen === "join" && (
           <div className="max-w-sm mx-auto py-8">
             <p className="text-cinema-muted mb-6 text-sm">Signed in as {displayName}. Create a family group, or join one with a shared code.</p>
@@ -1584,7 +1815,7 @@ export default function Home() {
             <h2 className="text-xl text-cinema-gold mb-4" style={displayFont}>
               {roomMeta?.type === "movie-night" ? "Set up for this Movie Night" : "Your streaming setup"}
             </h2>
-            {roomMeta?.type !== "movie-night" && (
+            {roomMeta?.type !== "movie-night" && !profile?.isMinor && (
               <div className="mb-5">
                 <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Your role in this family</div>
                 <div className="flex gap-2">
@@ -1601,6 +1832,11 @@ export default function Home() {
                     This family already has a parent — ask them to promote you from the Family tab.
                   </p>
                 )}
+              </div>
+            )}
+            {isPendingMinor && (
+              <div className="mb-5 px-3 py-2 rounded-lg bg-cinema-gold/15 border border-cinema-gold text-xs text-cinema-gold">
+                Your account is waiting on parent approval — you'll see G-rated titles only until then.
               </div>
             )}
             <div className="mb-5">
@@ -1625,7 +1861,7 @@ export default function Home() {
               <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Genres you like</div>
               <div className="flex flex-wrap gap-2">{GENRES.map((g) => <Chip key={g.id} active={genresInput.includes(g.id)} onClick={() => toggleGenre(g.id)}>{g.name}</Chip>)}</div>
             </div>
-            {roomMeta?.type !== "movie-night" && (
+            {roomMeta?.type !== "movie-night" && !isPendingMinor && (
             <div className="mb-6">
               <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">All-time favorite movies (optional)</div>
               <div className="relative mb-2">
