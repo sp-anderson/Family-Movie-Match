@@ -1540,9 +1540,6 @@ export default function Home() {
               <button onClick={() => signIn("google")} className="w-full px-6 py-2.5 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight">
                 Continue with Google
               </button>
-              <button onClick={() => signIn("apple")} className="w-full px-6 py-2.5 rounded-lg bg-stone-50 text-cinema-ink font-extrabold hover:bg-stone-200">
-                 Continue with Apple
-              </button>
               <button onClick={() => setShowEmailForm(true)} className="w-full px-6 py-2.5 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 font-extrabold hover:border-cinema-gold">
                 Continue with Email
               </button>

@@ -30,7 +30,7 @@ export async function POST(request) {
   });
 
   if (!result.ok) {
-    return NextResponse.json({ error: "Couldn't send the sign-in email. Try again in a moment." }, { status: 500 });
+    return NextResponse.json({ error: `Couldn't send the sign-in email: ${result.error || "unknown error"}` }, { status: 500 });
   }
   return NextResponse.json({ sent: true });
 }
