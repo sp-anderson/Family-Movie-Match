@@ -197,6 +197,27 @@ function FilterSortBar({ sort, setSort, genreFilter, setGenreFilter, castQuery, 
   );
 }
 
+const RATING_LABELS = { 1: "Not for me", 2: "It was okay", 3: "Liked it", 4: "★ Favorite" };
+function RatingControl({ movie, ratings, onRate }) {
+  const current = ratings[movie.id]?.rating;
+  return (
+    <div className="flex flex-wrap gap-1 mt-2">
+      {[1, 2, 3, 4].map((r) => (
+        <button
+          key={r}
+          onClick={() => onRate(movie, r)}
+          className={
+            "text-[10px] font-bold px-2 py-0.5 rounded-full border " +
+            (current === r ? "bg-cinema-gold text-cinema-ink border-cinema-gold" : "border-cinema-border text-cinema-muted hover:border-cinema-gold")
+          }
+        >
+          {RATING_LABELS[r]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function VoteSwitcher({ current, onSet }) {
   const options = [
     { key: "yes", label: "Change to yes", hoverClass: "hover:border-cinema-green hover:text-cinema-green" },
@@ -339,6 +360,53 @@ export default function Home() {
   const [members, setMembers] = useState([]);
   const [pool, setPool] = useState(null);
   const [votes, setVotes] = useState({});
+  const [ratings, setRatings] = useState({}); // { movieId: { rating: 1-4, ratedAt } } — this user's own ratings
+  const [ratingPromptMovie, setRatingPromptMovie] = useState(null); // movie object, shown as a light nudge after marking "seen"
+  const [migrationItems, setMigrationItems] = useState([]); // [{ originalTitle, candidate, rating, skipped }]
+  const [migrationLoading, setMigrationLoading] = useState(false);
+  const [migrationLoaded, setMigrationLoaded] = useState(false);
+
+  useEffect(() => {
+    if (screen !== "migrate-favorites" || migrationLoaded || !profile?.favorites?.length) return;
+    setMigrationLoading(true);
+    (async () => {
+      const items = await Promise.all(
+        profile.favorites.map(async (title) => {
+          try {
+            const res = await fetch(`/api/search?query=${encodeURIComponent(title)}`);
+            const data = await res.json();
+            const candidate = (data.results || [])[0] || null;
+            return { originalTitle: title, candidate, rating: 4, skipped: !candidate };
+          } catch {
+            return { originalTitle: title, candidate: null, rating: 4, skipped: true };
+          }
+        })
+      );
+      setMigrationItems(items);
+      setMigrationLoading(false);
+      setMigrationLoaded(true);
+    })();
+  }, [screen, migrationLoaded, profile?.favorites]);
+
+  async function finishMigration() {
+    for (const item of migrationItems) {
+      if (item.skipped || !item.candidate) continue;
+      try {
+        await fetch("/api/ratings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, movieId: item.candidate.id, rating: item.rating, genreIds: item.candidate.genre_ids || [] }),
+        });
+        setRatings((prev) => ({ ...prev, [item.candidate.id]: { rating: item.rating, ratedAt: Date.now(), genreIds: item.candidate.genre_ids || [] } }));
+      } catch {
+        // one failed migration item shouldn't block the rest
+      }
+    }
+    const merged = await saveProfile({ favoritesMigrated: true });
+    setProfile(merged);
+    setScreen(merged.services?.length && merged.genres?.length ? "swipe" : "setup");
+  }
+
   const [spotlight, setSpotlight] = useState([]);
   const [certifications, setCertifications] = useState({}); // movieId -> "PG-13" | "" (checked, none found)
 
@@ -538,6 +606,10 @@ export default function Home() {
       }
 
       setRegionInput(data.profile.region || "CA");
+      fetch(`/api/ratings?email=${encodeURIComponent(email)}`)
+        .then((r) => r.json())
+        .then((d) => setRatings(d.ratings || {}))
+        .catch(() => setRatings({}));
       setWantsTheatersInput(data.profile.wantsTheaters || false);
       setRoleInput(data.profile.role || "child");
       setServicesInput(data.profile.services || []);
@@ -572,7 +644,11 @@ export default function Home() {
         }
       }
 
-      setScreen(data.profile.services?.length && data.profile.genres?.length ? "swipe" : "setup");
+      if (data.profile.favorites?.length && !data.profile.favoritesMigrated) {
+        setScreen("migrate-favorites");
+      } else {
+        setScreen(data.profile.services?.length && data.profile.genres?.length ? "swipe" : "setup");
+      }
       setLoadingProfile(false);
     })();
   }, [status, email]);
@@ -1064,6 +1140,39 @@ export default function Home() {
     return ids;
   }, [votes, email]);
 
+  const RATING_THRESHOLD_FOR_PERSONALIZATION = 5;
+  const RATING_WEIGHTS = { 1: -0.5, 2: 0.1, 3: 0.6, 4: 1.0 }; // Dislike / OK (near-neutral) / Liked / Favorite
+  const NO_VOTE_WEIGHT = -0.3; // mild negative — a pass isn't as strong a signal as an actual dislike rating
+  const AFFINITY_HALF_LIFE_DAYS = 180; // older ratings gradually count for less
+
+  function computeGenreAffinity() {
+    const affinity = {};
+    const now = Date.now();
+    Object.values(ratings).forEach(({ rating, ratedAt, genreIds }) => {
+      if (!genreIds || !genreIds.length || !RATING_WEIGHTS[rating]) return;
+      const daysAgo = (now - (ratedAt || now)) / (1000 * 60 * 60 * 24);
+      const decay = Math.pow(0.5, daysAgo / AFFINITY_HALF_LIFE_DAYS);
+      const weight = RATING_WEIGHTS[rating] * decay;
+      genreIds.forEach((g) => {
+        affinity[g] = (affinity[g] || 0) + weight;
+      });
+    });
+    if (pool) {
+      pool.movies.forEach((m) => {
+        if ((votes[m.id] || {})[email] === "no") {
+          (m.genre_ids || []).forEach((g) => {
+            affinity[g] = (affinity[g] || 0) + NO_VOTE_WEIGHT;
+          });
+        }
+      });
+    }
+    return affinity;
+  }
+
+  function scoreMovieByAffinity(movie, affinity) {
+    return (movie.genre_ids || []).reduce((sum, g) => sum + (affinity[g] || 0), 0);
+  }
+
   const deck = useMemo(() => {
     if (!pool) return [];
     let movies = pool.movies.filter((m) => {
@@ -1096,6 +1205,10 @@ export default function Home() {
         return cert !== "" && ratingRank(cert) <= maxRank;
       });
     }
+    if (Object.keys(ratings).length >= RATING_THRESHOLD_FOR_PERSONALIZATION) {
+      const affinity = computeGenreAffinity();
+      movies = [...movies].sort((a, b) => scoreMovieByAffinity(b, affinity) - scoreMovieByAffinity(a, affinity));
+    }
     if (skippedOrder.length) {
       const skippedSet = new Set(skippedOrder);
       const rest = movies.filter((m) => !skippedSet.has(m.id));
@@ -1104,7 +1217,7 @@ export default function Home() {
     }
     return movies;
     // eslint-disable-next-line
-  }, [pool, myVotedIds, myMaxRating, certifications, votes, email, spotlight, reconsidered, skippedOrder, profile?.genres]);
+  }, [pool, myVotedIds, myMaxRating, certifications, votes, email, spotlight, reconsidered, skippedOrder, profile?.genres, ratings]);
   const currentMovie = deck[0];
   const currentMovieNudges = currentMovie ? nudgeRecommenders(currentMovie.id) : [];
 
@@ -1277,7 +1390,27 @@ export default function Home() {
     if (nudgeRecommenders(currentMovie.id).length > 0) {
       dismissNudge(currentMovie.id);
     }
-    castVote(currentMovie.id, "seen");
+    castVoteWithPrompt(currentMovie, "seen");
+  }
+
+  async function saveRating(movie, rating) {
+    const movieId = movie.id;
+    setRatings((prev) => ({ ...prev, [movieId]: { rating, ratedAt: Date.now(), genreIds: movie.genre_ids || [] } }));
+    try {
+      await fetch("/api/ratings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, movieId, rating, genreIds: movie.genre_ids || [] }),
+      });
+    } catch {
+      // optimistic update already applied — a later refresh will reconcile
+    }
+    setRatingPromptMovie(null);
+  }
+
+  function castVoteWithPrompt(movie, choice) {
+    castVote(movie.id, choice);
+    if (choice === "seen") setRatingPromptMovie(movie);
   }
 
   async function skipCurrent() {
@@ -1521,7 +1654,7 @@ export default function Home() {
           <ProviderRow movieId={m.id} region={profile?.region} />
           <TrailerButton movieId={m.id} />
           <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
-          <VoteSwitcher current="yes" onSet={(choice) => castVote(m.id, choice)} />
+          <VoteSwitcher current="yes" onSet={(choice) => castVoteWithPrompt(m, choice)} />
         </div>
       </div>
     );
@@ -1603,6 +1736,42 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-cinema-bg text-stone-50" style={bodyFont}>
+      {ratingPromptMovie && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 bg-cinema-panel border-t-2 border-cinema-gold px-5 py-4 shadow-2xl">
+          <div className="max-w-sm mx-auto">
+            <div className="flex items-start gap-3 mb-3">
+              {ratingPromptMovie.poster_path && (
+                <img
+                  src={`https://image.tmdb.org/t/p/w92${ratingPromptMovie.poster_path}`}
+                  alt={ratingPromptMovie.title}
+                  className="w-12 h-18 object-cover rounded flex-shrink-0"
+                />
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-bold text-cinema-mutedLight uppercase tracking-wide">How was it?</div>
+                <div className="font-extrabold text-stone-50 truncate">{ratingPromptMovie.title}</div>
+              </div>
+              <button onClick={() => setRatingPromptMovie(null)} className="text-cinema-mutedDark hover:text-stone-50 flex-shrink-0" aria-label="Dismiss">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              <button onClick={() => saveRating(ratingPromptMovie, 1)} className="py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-orangeLight text-xs font-bold hover:border-cinema-orange">
+                Not for me
+              </button>
+              <button onClick={() => saveRating(ratingPromptMovie, 2)} className="py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-mutedLight text-xs font-bold hover:border-cinema-mutedLight">
+                It was okay
+              </button>
+              <button onClick={() => saveRating(ratingPromptMovie, 3)} className="py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-green text-xs font-bold hover:border-cinema-green">
+                Liked it
+              </button>
+              <button onClick={() => saveRating(ratingPromptMovie, 4)} className="py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-gold text-xs font-bold hover:border-cinema-gold">
+                ★ Favorite
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {celebration && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-6"
@@ -1807,6 +1976,74 @@ export default function Home() {
           </div>
         )}
 
+        {screen === "migrate-favorites" && (
+          <div className="max-w-sm mx-auto py-8">
+            <h2 className="text-xl text-cinema-gold mb-2" style={displayFont}>Quick favorites check</h2>
+            <p className="text-cinema-muted mb-5 text-sm">
+              We're upgrading how favorites work — confirm each one below and pick how you'd rate it. Anything you skip
+              just won't carry over.
+            </p>
+            {migrationLoading && <p className="text-cinema-muted text-sm">Looking these up…</p>}
+            {!migrationLoading && (
+              <div className="space-y-4 mb-6">
+                {migrationItems.map((item, i) => (
+                  <div key={i} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
+                    {item.candidate?.poster_path ? (
+                      <img src={`https://image.tmdb.org/t/p/w92${item.candidate.poster_path}`} className="w-14 h-20 object-cover rounded flex-shrink-0" alt={item.candidate.title} />
+                    ) : (
+                      <div className="w-14 h-20 bg-cinema-border rounded flex-shrink-0" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[11px] text-cinema-mutedDark">You had: "{item.originalTitle}"</div>
+                      {item.candidate ? (
+                        <>
+                          <div className="font-extrabold text-sm">
+                            {item.candidate.title} {item.candidate.year && <span className="text-cinema-muted font-normal">({item.candidate.year})</span>}
+                          </div>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {[1, 2, 3, 4].map((r) => (
+                              <button
+                                key={r}
+                                onClick={() =>
+                                  setMigrationItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, rating: r, skipped: false } : it)))
+                                }
+                                className={
+                                  "text-[10px] font-bold px-2 py-0.5 rounded-full border " +
+                                  (!item.skipped && item.rating === r ? "bg-cinema-gold text-cinema-ink border-cinema-gold" : "border-cinema-border text-cinema-muted hover:border-cinema-gold")
+                                }
+                              >
+                                {RATING_LABELS[r]}
+                              </button>
+                            ))}
+                            <button
+                              onClick={() => setMigrationItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, skipped: true } : it)))}
+                              className={
+                                "text-[10px] font-bold px-2 py-0.5 rounded-full border " +
+                                (item.skipped ? "bg-cinema-border text-cinema-mutedLight border-cinema-border" : "border-cinema-border text-cinema-mutedDark hover:border-cinema-mutedLight")
+                              }
+                            >
+                              Skip
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-xs text-cinema-mutedDark">Couldn't find a match — this one will be skipped.</div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button
+              onClick={finishMigration}
+              disabled={migrationLoading}
+              className="w-full py-2.5 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight disabled:opacity-50"
+            >
+              Done
+            </button>
+          </div>
+        )}
+
         {screen === "join" && (
           <div className="max-w-sm mx-auto py-8">
             <p className="text-cinema-muted mb-6 text-sm">Signed in as {displayName}. Create a family group, or join one with a shared code.</p>
@@ -1932,6 +2169,11 @@ export default function Home() {
             {myMaxRating && (
               <div className="text-center text-[11px] font-bold text-cinema-gold mb-2">
                 Showing movies rated {myMaxRating} and under
+              </div>
+            )}
+            {Object.keys(ratings).length >= RATING_THRESHOLD_FOR_PERSONALIZATION && (
+              <div className="text-center text-[11px] font-bold text-cinema-mutedDark mb-2">
+                Sorted based on what you've rated highly
               </div>
             )}
             {!pool && (
@@ -2216,7 +2458,7 @@ export default function Home() {
                         <ProviderRow movieId={m.id} region={profile?.region} />
                         <TrailerButton movieId={m.id} />
                         <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
-                        <VoteSwitcher current="yes" onSet={(choice) => castVote(m.id, choice)} />
+                        <VoteSwitcher current="yes" onSet={(choice) => castVoteWithPrompt(m, choice)} />
                       </div>
                     </div>
                   ))}
@@ -2243,7 +2485,8 @@ export default function Home() {
                         <ProviderRow movieId={m.id} region={profile?.region} />
                         <TrailerButton movieId={m.id} />
                         <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
-                        <VoteSwitcher current="seen" onSet={(choice) => castVote(m.id, choice)} />
+                        <RatingControl movie={m} ratings={ratings} onRate={saveRating} />
+                        <VoteSwitcher current="seen" onSet={(choice) => castVoteWithPrompt(m, choice)} />
                       </div>
                     </div>
                   ))}
@@ -2269,7 +2512,7 @@ export default function Home() {
                         <ProviderRow movieId={m.id} region={profile?.region} />
                         <TrailerButton movieId={m.id} />
                         <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
-                        <VoteSwitcher current="no" onSet={(choice) => castVote(m.id, choice)} />
+                        <VoteSwitcher current="no" onSet={(choice) => castVoteWithPrompt(m, choice)} />
                       </div>
                     </div>
                   ))}
@@ -2296,7 +2539,7 @@ export default function Home() {
                         <ProviderRow movieId={m.id} region={profile?.region} />
                         <TrailerButton movieId={m.id} />
                         <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
-                        <VoteSwitcher onSet={(choice) => castVote(m.id, choice)} />
+                        <VoteSwitcher onSet={(choice) => castVoteWithPrompt(m, choice)} />
                         <button
                           onClick={() => unskipMovie(m.id)}
                           className="text-[11px] font-bold px-2 py-0.5 rounded-full border border-cinema-border text-cinema-muted hover:border-cinema-mutedLight mt-1"
