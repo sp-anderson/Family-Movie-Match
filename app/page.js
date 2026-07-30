@@ -26,6 +26,34 @@ function providerDisplayName(id, fallbackName) {
 }
 
 const RATINGS = ["G", "PG", "PG-13", "R", "NC-17"];
+
+const DOB_MONTHS = [
+  ["01", "January"], ["02", "February"], ["03", "March"], ["04", "April"],
+  ["05", "May"], ["06", "June"], ["07", "July"], ["08", "August"],
+  ["09", "September"], ["10", "October"], ["11", "November"], ["12", "December"],
+];
+const DOB_DAYS = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, "0"));
+const DOB_YEARS = Array.from({ length: 100 }, (_, i) => String(new Date().getFullYear() - i));
+
+function DobFields({ month, day, year, setMonth, setDay, setYear }) {
+  const selectClass = "flex-1 px-2 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold text-sm";
+  return (
+    <div className="flex gap-2">
+      <select value={month} onChange={(e) => setMonth(e.target.value)} className={selectClass}>
+        <option value="">Month</option>
+        {DOB_MONTHS.map(([val, label]) => <option key={val} value={val}>{label}</option>)}
+      </select>
+      <select value={day} onChange={(e) => setDay(e.target.value)} className={selectClass}>
+        <option value="">Day</option>
+        {DOB_DAYS.map((d) => <option key={d} value={d}>{parseInt(d, 10)}</option>)}
+      </select>
+      <select value={year} onChange={(e) => setYear(e.target.value)} className={selectClass}>
+        <option value="">Year</option>
+        {DOB_YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+      </select>
+    </div>
+  );
+}
 function ratingRank(cert) {
   const i = RATINGS.indexOf(cert);
   return i === -1 ? 99 : i; // unknown/unrated certifications rank as most restrictive
@@ -446,7 +474,22 @@ export default function Home() {
     setMagicLinkBusy(false);
   }
 
-  const [dobInput, setDobInput] = useState("");
+  const [dobYear, setDobYear] = useState("");
+  const [dobMonth, setDobMonth] = useState("");
+  const [dobDay, setDobDay] = useState("");
+  const dobInput = dobYear && dobMonth && dobDay ? `${dobYear}-${dobMonth}-${dobDay}` : "";
+  function setDobFromString(dobStr) {
+    if (!dobStr) {
+      setDobYear("");
+      setDobMonth("");
+      setDobDay("");
+      return;
+    }
+    const [y, m, d] = dobStr.split("-");
+    setDobYear(y || "");
+    setDobMonth(m || "");
+    setDobDay(d || "");
+  }
   const [dobError, setDobError] = useState("");
   const [parentEmailInput, setParentEmailInput] = useState("");
   const [parentConsentError, setParentConsentError] = useState("");
@@ -634,13 +677,19 @@ export default function Home() {
         .then((d) => setRatings(d.ratings || {}))
         .catch(() => setRatings({}));
       setWantsTheatersInput(data.profile.wantsTheaters || false);
-      setRoleInput(data.profile.role || "child");
       setServicesInput(data.profile.services || []);
       setGenresInput(data.profile.genres || []);
       setFavorites(data.profile.favorites || []);
 
       const familyData = await loadGroup(data.profile.group);
       setFamilyMembers((familyData && familyData.members) || []);
+
+      // your actual role in THIS family (members[].role) is the source of
+      // truth — not the personal profile field, which can go stale if you
+      // were promoted/demoted by another parent via the Family tab (that
+      // only ever updates the shared member record, not your own profile)
+      const myFamilyRec = ((familyData && familyData.members) || []).find((m) => m.email === email);
+      setRoleInput(myFamilyRec?.role || data.profile.role || "child");
 
       if (data.profile.isMinor && data.profile.consentStatus === "approved" && familyData?.members) {
         const myRec = familyData.members.find((m) => m.email === email);
@@ -1940,13 +1989,9 @@ export default function Home() {
             <h2 className="text-xl text-cinema-gold mb-2" style={displayFont}>One quick thing first</h2>
             <p className="text-cinema-muted mb-5 text-sm">We ask everyone's date of birth so we can keep content age-appropriate.</p>
             <label className="text-xs font-bold text-cinema-muted uppercase tracking-wide">Date of birth</label>
-            <input
-              type="date"
-              value={dobInput}
-              onChange={(e) => setDobInput(e.target.value)}
-              max={new Date().toISOString().slice(0, 10)}
-              className="w-full mt-1 mb-2 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold"
-            />
+            <div className="mt-1 mb-2">
+              <DobFields month={dobMonth} day={dobDay} year={dobYear} setMonth={setDobMonth} setDay={setDobDay} setYear={setDobYear} />
+            </div>
             {dobError && <p className="text-cinema-orangeLight text-xs mb-3">{dobError}</p>}
             <button onClick={submitDob} className="w-full py-2.5 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight">
               Continue
@@ -2093,7 +2138,7 @@ export default function Home() {
                     <span className="text-sm text-stone-50">{profile?.dob || "Not set"}</span>
                     <button
                       onClick={() => {
-                        setDobInput(profile?.dob || "");
+                        setDobFromString(profile?.dob || "");
                         setDobError("");
                         setShowDobEdit(true);
                       }}
@@ -2104,13 +2149,9 @@ export default function Home() {
                   </div>
                 ) : (
                   <div>
-                    <input
-                      type="date"
-                      value={dobInput}
-                      onChange={(e) => setDobInput(e.target.value)}
-                      max={new Date().toISOString().slice(0, 10)}
-                      className="w-full mb-2 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold"
-                    />
+                    <div className="mb-2">
+                      <DobFields month={dobMonth} day={dobDay} year={dobYear} setMonth={setDobMonth} setDay={setDobDay} setYear={setDobYear} />
+                    </div>
                     {dobError && <p className="text-cinema-orangeLight text-xs mb-2">{dobError}</p>}
                     <div className="flex gap-2">
                       <button onClick={saveDobEdit} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-cinema-gold text-cinema-ink hover:bg-cinema-goldLight">
