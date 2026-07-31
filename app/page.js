@@ -572,26 +572,35 @@ export default function Home() {
     setParentConsentBusy(false);
   }
 
+  const [checkingConsent, setCheckingConsent] = useState(false);
+  const [stillPendingNote, setStillPendingNote] = useState(false);
+
   async function checkConsentStatus() {
     if (!email) return;
+    setCheckingConsent(true);
+    setStillPendingNote(false);
     try {
       const res = await fetch(`/api/profile?email=${encodeURIComponent(email)}`);
       const data = await res.json();
       if (data.profile) {
         setProfile((prev) => ({ ...prev, ...data.profile }));
-        // if approval just landed and we already have a family, sync the
-        // rating right away instead of waiting for the next full page load
         if (data.profile.isMinor && data.profile.consentStatus === "approved" && data.profile.group) {
+          // if approval just landed and we already have a family, sync the
+          // rating right away instead of waiting for the next full page load
           const myRec = (members || []).find((m) => m.email === email);
           if (myRec && myRec.maxRating !== data.profile.approvedRating) {
             await saveMember(data.profile.group, { ...myRec, role: "child", maxRating: data.profile.approvedRating });
             await loadGroup(data.profile.group);
           }
+        } else if (data.profile.isMinor && data.profile.consentStatus !== "approved") {
+          setStillPendingNote(true);
         }
       }
-    } catch {
-      // silent — this is a background convenience check, not a critical action
+    } catch (e) {
+      console.error("checkConsentStatus failed:", e);
+      setError("Couldn't check right now — try again in a moment.");
     }
+    setCheckingConsent(false);
   }
 
   useEffect(() => {
@@ -1957,11 +1966,14 @@ export default function Home() {
         </div>
       )}
       {isPendingMinor && profile?.group && (
-        <div className="px-5 py-2 bg-cinema-gold/15 border-b border-cinema-gold text-center text-xs font-bold text-cinema-gold flex items-center justify-center gap-2 flex-wrap">
-          <span>Waiting on parent approval — showing G-rated titles only for now</span>
-          <button onClick={checkConsentStatus} className="underline hover:no-underline">
-            Already approved? Check now
-          </button>
+        <div className="px-5 py-2 bg-cinema-gold/15 border-b border-cinema-gold text-center text-xs font-bold text-cinema-gold flex flex-col items-center gap-1">
+          <div className="flex items-center justify-center gap-2 flex-wrap">
+            <span>Waiting on parent approval — showing G-rated titles only for now</span>
+            <button onClick={checkConsentStatus} disabled={checkingConsent} className="underline hover:no-underline disabled:opacity-60">
+              {checkingConsent ? "Checking…" : "Already approved? Check now"}
+            </button>
+          </div>
+          {stillPendingNote && <span className="text-cinema-mutedLight font-normal">Still waiting — nothing yet.</span>}
         </div>
       )}
       <div className="px-5 pt-5 pb-3 flex items-center justify-between border-b border-cinema-border/60">
