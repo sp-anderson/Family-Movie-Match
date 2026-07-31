@@ -1288,28 +1288,41 @@ export default function Home() {
         }
       }
 
-      // pull in what's currently playing in theaters, if anyone wants that included
+      // always check what's currently in theaters, so a movie that entered
+      // the pool via ordinary genre discovery still gets correctly labeled
+      // — independent of whether anyone's opted into proactively adding
+      // extra theatrical titles that wouldn't otherwise match
       const anyoneWantsTheaters = members.some((m) => m.wantsTheaters) || profile.wantsTheaters;
-      if (anyoneWantsTheaters) {
-        try {
-          for (let page = 1; page <= 2; page++) {
-            const npRes = await fetch(`/api/nowplaying?region=${profile.region || "CA"}&page=${page}`);
-            const npData = await npRes.json();
-            if (!npRes.ok || !npData.results?.length) break;
+      const nowPlayingIds = new Set();
+      try {
+        for (let page = 1; page <= 2; page++) {
+          const npRes = await fetch(`/api/nowplaying?region=${profile.region || "CA"}&page=${page}`);
+          const npData = await npRes.json();
+          if (!npRes.ok || !npData.results?.length) break;
+          npData.results.forEach((m) => nowPlayingIds.add(m.id));
+          if (anyoneWantsTheaters) {
             const tagged = npData.results
               .filter((m) => !allGenreIds.length || (m.genre_ids || []).some((g) => allGenreIds.includes(g)))
               .map((m) => ({ ...m, _inTheaters: true }));
             fetched = fetched.concat(tagged);
           }
-        } catch {
-          // theaters listing is a bonus — don't block the whole fetch if it fails
         }
+      } catch {
+        // theaters listing is a bonus — don't block the whole fetch if it fails
       }
 
       // merge: keep every movie anyone has ever seen in this group's pool
       // (so votes/matches on them stay valid) and add anything new
       const byId = new Map(existingMovies.map((m) => [m.id, m]));
       for (const m of fetched) if (!byId.has(m.id)) byId.set(m.id, m);
+
+      // tag anything currently in theaters, even if it got here through
+      // ordinary genre discovery rather than the theaters injection above
+      nowPlayingIds.forEach((id) => {
+        const existing = byId.get(id);
+        if (existing && !existing._inTheaters) byId.set(id, { ...existing, _inTheaters: true });
+      });
+
 
       // make sure everyone's existing votes are actually represented here —
       // don't leave it to chance whether TMDB's discover results happened to
