@@ -607,10 +607,11 @@ export default function Home() {
         if (data.profile.isMinor && data.profile.consentStatus === "approved" && data.profile.group) {
           // if approval just landed and we already have a family, sync the
           // rating right away instead of waiting for the next full page load
-          const myRec = (members || []).find((m) => m.email === email);
+          const myRec = (familyMembers || members || []).find((m) => m.email === email);
           if (myRec && myRec.maxRating !== data.profile.approvedRating) {
             await saveMember(data.profile.group, { ...myRec, role: "child", maxRating: data.profile.approvedRating });
-            await loadGroup(data.profile.group);
+            const refreshed = await loadGroup(data.profile.group);
+            setFamilyMembers((refreshed && refreshed.members) || []);
           }
         } else if (data.profile.isMinor && data.profile.consentStatus !== "approved") {
           setStillPendingNote(true);
@@ -760,6 +761,8 @@ export default function Home() {
         const myRec = familyData.members.find((m) => m.email === email);
         if (myRec && myRec.maxRating !== data.profile.approvedRating) {
           await saveMember(data.profile.group, { ...myRec, role: "child", maxRating: data.profile.approvedRating });
+          const refreshed = await loadGroup(data.profile.group);
+          setFamilyMembers((refreshed && refreshed.members) || []);
         }
       }
 
