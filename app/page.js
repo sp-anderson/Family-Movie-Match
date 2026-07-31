@@ -1510,7 +1510,9 @@ export default function Home() {
     return score;
   }
 
-  const deck = useMemo(() => {
+  const BATCH_SIZE = 20;
+
+  const filteredMovies = useMemo(() => {
     if (!pool) return [];
     let movies = pool.movies.filter((m) => {
       const alreadyVoted = myVotedIds.has(m.id);
@@ -1542,45 +1544,38 @@ export default function Home() {
         return cert !== "" && ratingRank(cert) <= maxRank;
       });
     }
-    if (Object.keys(ratings).length >= RATING_THRESHOLD_FOR_PERSONALIZATION) {
-      const tasteProfile = computeTasteProfile();
-      // freeze each movie's score the first time it's computed. Without
-      // this, a card that's already visible could get silently reshuffled
-      // out from under someone the moment background-prefetched cast/crew
-      // data arrives for it (or for a neighboring card) and its score
-      // changes — jarring mid-decision. Once scored, a movie's position is
-      // locked in for the rest of this session, regardless of what data
-      // arrives afterward.
-      movies = [...movies].sort((a, b) => {
-        if (!scoreCacheRef.current.has(a.id)) scoreCacheRef.current.set(a.id, scoreMovieByProfile(a, tasteProfile));
-        if (!scoreCacheRef.current.has(b.id)) scoreCacheRef.current.set(b.id, scoreMovieByProfile(b, tasteProfile));
-        return scoreCacheRef.current.get(b.id) - scoreCacheRef.current.get(a.id);
-      });
-    }
-    if (skippedOrder.length) {
-      const skippedSet = new Set(skippedOrder);
-      const rest = movies.filter((m) => !skippedSet.has(m.id));
-      const pushedToEnd = skippedOrder.map((id) => movies.find((m) => m.id === id)).filter(Boolean);
-      movies = [...rest, ...pushedToEnd];
-    }
     return movies;
-    // deliberately NOT depending on detailsCache here — as background-
-    // prefetched cast/crew data trickles in, we don't want the deck to
-    // live-reorder and yank the card someone's currently looking at out
-    // from under them. Newly arrived credit data still gets used for
-    // scoring, just the next time this recomputes for another reason
-    // (like an actual swipe), not as a disruptive mid-view reshuffle.
-    // eslint-disable-next-line
-  }, [pool, myVotedIds, myMaxRating, certifications, votes, email, spotlight, reconsidered, skippedOrder, profile?.genres, ratings]);
-  const currentMovie = deck[0];
-  const currentMovieNudges = currentMovie ? nudgeRecommenders(currentMovie.id) : [];
+  }, [pool, myVotedIds, myMaxRating, certifications, votes, email, spotlight, reconsidered, profile?.genres]);
+
+  // personalized ordering, built up in fully-enriched batches of 20 instead
+  // of scoring the whole pool at once. Every movie in a batch gets its
+  // cast/director/writer/keyword data fetched BEFORE the batch is scored or
+  // shown — so nothing is ever judged on genre alone just because it didn't
+  // happen to be near the front. Once a batch is scored and committed, its
+  // order is frozen for the session (same reasoning as before — no
+  // reshuffling a card someone might already be looking at).
+  const [committedOrder, setCommittedOrder] = useState([]);
+  const [batchLoading, setBatchLoading] = useState(false);
 
   useEffect(() => {
-    if (Object.keys(ratings).length < RATING_THRESHOLD_FOR_PERSONALIZATION) return;
-    const pending = deck.slice(0, 12).filter((m) => detailsCache[m.id] === undefined);
-    if (!pending.length) return;
+    if (Object.keys(ratings).length < RATING_THRESHOLD_FOR_PERSONALIZATION || !pool || batchLoading) return;
+    const committedSet = new Set(committedOrder);
+    const notYetCommitted = filteredMovies.filter((m) => !committedSet.has(m.id));
+    if (!notYetCommitted.length) return;
+
+    // has the most recently committed batch been at least half swiped
+    // through (or is this the very first batch)? if so, it's time to
+    // prepare the next one, seamlessly, before the current one runs out
+    const lastBatchIds = committedOrder.slice(-BATCH_SIZE);
+    const lastBatchRemaining = lastBatchIds.filter((id) => !myVotedIds.has(id)).length;
+    const shouldLoadNext = committedOrder.length === 0 || lastBatchRemaining <= Math.ceil(BATCH_SIZE / 2);
+    if (!shouldLoadNext) return;
+
     let cancelled = false;
+    setBatchLoading(true);
     (async () => {
+      const nextBatch = notYetCommitted.slice(0, BATCH_SIZE);
+      const pending = nextBatch.filter((m) => detailsCache[m.id] === undefined);
       for (let i = 0; i < pending.length; i += 5) {
         if (cancelled) return;
         const batch = pending.slice(i, i + 5);
@@ -1600,12 +1595,49 @@ export default function Home() {
           return next;
         });
       }
+      if (cancelled) return;
+      // every movie in this batch now has full credits available — score
+      // and sort just this batch, then freeze that order permanently
+      const tasteProfile = computeTasteProfile();
+      const scored = [...nextBatch].sort((a, b) => scoreMovieByProfile(b, tasteProfile) - scoreMovieByProfile(a, tasteProfile));
+      scored.forEach((m) => scoreCacheRef.current.set(m.id, scoreMovieByProfile(m, tasteProfile)));
+      setCommittedOrder((prev) => [...prev, ...scored.map((m) => m.id)]);
+      setBatchLoading(false);
     })();
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line
-  }, [deck.slice(0, 12).map((m) => m.id).join(","), Object.keys(ratings).length]);
+  }, [filteredMovies, myVotedIds, Object.keys(ratings).length, committedOrder, batchLoading]);
+
+  useEffect(() => {
+    if (!pool || fetchingPool) return;
+    // pull in more candidates automatically once the stack is running low,
+    // rather than waiting for someone to notice it's empty and hit a button
+    if (filteredMovies.length <= BATCH_SIZE) fetchPool();
+    // eslint-disable-next-line
+  }, [filteredMovies.length, pool, fetchingPool]);
+
+  const deck = useMemo(() => {
+    let movies;
+    if (Object.keys(ratings).length >= RATING_THRESHOLD_FOR_PERSONALIZATION) {
+      const committedMovies = committedOrder.map((id) => filteredMovies.find((m) => m.id === id)).filter(Boolean);
+      const committedSet = new Set(committedOrder);
+      const notYetCommitted = filteredMovies.filter((m) => !committedSet.has(m.id));
+      movies = [...committedMovies, ...notYetCommitted];
+    } else {
+      movies = filteredMovies;
+    }
+    if (skippedOrder.length) {
+      const skippedSet = new Set(skippedOrder);
+      const rest = movies.filter((m) => !skippedSet.has(m.id));
+      const pushedToEnd = skippedOrder.map((id) => movies.find((m) => m.id === id)).filter(Boolean);
+      movies = [...rest, ...pushedToEnd];
+    }
+    return movies;
+  }, [filteredMovies, committedOrder, ratings, skippedOrder]);
+  const currentMovie = deck[0];
+  const currentMovieNudges = currentMovie ? nudgeRecommenders(currentMovie.id) : [];
 
   const ratingCheckPending = myMaxRating && pool ? pool.movies.some((m) => certifications[m.id] === undefined) : false;
 
