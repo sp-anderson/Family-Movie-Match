@@ -257,7 +257,7 @@ function FilterSortBar({ sort, setSort, genreFilter, setGenreFilter, castQuery, 
   );
 }
 
-const RATING_LABELS = { 1: "Not for me", 2: "It was okay", 3: "Liked it", 4: "★ Loved it" };
+const RATING_LABELS = { 1: "Not for me", 2: "It was okay", 3: "Liked it", 4: "Loved it" };
 function RatingControl({ movie, ratings, onRate }) {
   const current = ratings[movie.id]?.rating;
   return (
