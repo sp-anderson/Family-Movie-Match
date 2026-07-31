@@ -437,6 +437,7 @@ export default function Home() {
           castIds: credits?.castIds || [],
           directorIds: credits?.directorIds || [],
           writerIds: credits?.writerIds || [],
+          keywordIds: credits?.keywordIds || [],
         };
         await fetch("/api/ratings", {
           method: "POST",
@@ -445,7 +446,7 @@ export default function Home() {
         });
         setRatings((prev) => ({
           ...prev,
-          [item.candidate.id]: { rating: item.rating, ratedAt: Date.now(), genreIds: payload.genreIds, castIds: payload.castIds, directorIds: payload.directorIds, writerIds: payload.writerIds },
+          [item.candidate.id]: { rating: item.rating, ratedAt: Date.now(), genreIds: payload.genreIds, castIds: payload.castIds, directorIds: payload.directorIds, writerIds: payload.writerIds, keywordIds: payload.keywordIds },
         }));
       } catch {
         // one failed migration item shouldn't block the rest
@@ -1413,13 +1414,14 @@ export default function Home() {
   // common and noisy; sharing a specific director with something you rated
   // highly is rare and means a lot more) — weighted accordingly
   const CAST_WEIGHT_MULT = 1;
+  const KEYWORD_WEIGHT_MULT = 1.5; // more specific than genre (captures "superhero," "time travel," etc — things genre can't express) but a movie can carry many keywords, diluting any one contribution
   const WRITER_WEIGHT_MULT = 2;
   const DIRECTOR_WEIGHT_MULT = 3;
 
   function computeTasteProfile() {
-    const genre = {}, cast = {}, director = {}, writer = {};
+    const genre = {}, cast = {}, director = {}, writer = {}, keyword = {};
     const now = Date.now();
-    Object.values(ratings).forEach(({ rating, ratedAt, genreIds, castIds, directorIds, writerIds }) => {
+    Object.values(ratings).forEach(({ rating, ratedAt, genreIds, castIds, directorIds, writerIds, keywordIds }) => {
       if (!RATING_WEIGHTS[rating]) return;
       const daysAgo = (now - (ratedAt || now)) / (1000 * 60 * 60 * 24);
       const decay = Math.pow(0.5, daysAgo / AFFINITY_HALF_LIFE_DAYS);
@@ -1428,6 +1430,7 @@ export default function Home() {
       (castIds || []).forEach((c) => { cast[c] = (cast[c] || 0) + weight; });
       (directorIds || []).forEach((d) => { director[d] = (director[d] || 0) + weight; });
       (writerIds || []).forEach((w) => { writer[w] = (writer[w] || 0) + weight; });
+      (keywordIds || []).forEach((k) => { keyword[k] = (keyword[k] || 0) + weight; });
     });
     if (pool) {
       pool.movies.forEach((m) => {
@@ -1438,24 +1441,26 @@ export default function Home() {
             (credits.castIds || []).forEach((c) => { cast[c] = (cast[c] || 0) + NO_VOTE_WEIGHT; });
             (credits.directorIds || []).forEach((d) => { director[d] = (director[d] || 0) + NO_VOTE_WEIGHT; });
             (credits.writerIds || []).forEach((w) => { writer[w] = (writer[w] || 0) + NO_VOTE_WEIGHT; });
+            (credits.keywordIds || []).forEach((k) => { keyword[k] = (keyword[k] || 0) + NO_VOTE_WEIGHT; });
           }
         }
       });
     }
-    return { genre, cast, director, writer };
+    return { genre, cast, director, writer, keyword };
   }
 
   function scoreMovieByProfile(movie, profile) {
     let score = (movie.genre_ids || []).reduce((sum, g) => sum + (profile.genre[g] || 0), 0);
-    // cast/crew scoring only kicks in for movies we've already fetched
-    // credits for (rated movies, or ones the background prefetch reached) —
-    // degrades gracefully to genre-only for everything else, rather than
-    // trying to fetch credits for the whole pool up front
+    // cast/crew/keyword scoring only kicks in for movies we've already
+    // fetched credits for (rated movies, or ones the background prefetch
+    // reached) — degrades gracefully to genre-only for everything else,
+    // rather than trying to fetch credits for the whole pool up front
     const credits = detailsCache[movie.id];
     if (credits) {
       score += (credits.castIds || []).reduce((sum, c) => sum + (profile.cast[c] || 0), 0) * CAST_WEIGHT_MULT;
       score += (credits.directorIds || []).reduce((sum, d) => sum + (profile.director[d] || 0), 0) * DIRECTOR_WEIGHT_MULT;
       score += (credits.writerIds || []).reduce((sum, w) => sum + (profile.writer[w] || 0), 0) * WRITER_WEIGHT_MULT;
+      score += (credits.keywordIds || []).reduce((sum, k) => sum + (profile.keyword[k] || 0), 0) * KEYWORD_WEIGHT_MULT;
     }
     return score;
   }
@@ -1779,8 +1784,9 @@ export default function Home() {
         castIds: credits?.castIds || [],
         directorIds: credits?.directorIds || [],
         writerIds: credits?.writerIds || [],
+        keywordIds: credits?.keywordIds || [],
       };
-      setRatings((prev) => ({ ...prev, [movieId]: { rating, ratedAt: Date.now(), genreIds, castIds: payload.castIds, directorIds: payload.directorIds, writerIds: payload.writerIds } }));
+      setRatings((prev) => ({ ...prev, [movieId]: { rating, ratedAt: Date.now(), genreIds, castIds: payload.castIds, directorIds: payload.directorIds, writerIds: payload.writerIds, keywordIds: payload.keywordIds } }));
       await fetch("/api/ratings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

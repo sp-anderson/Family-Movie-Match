@@ -10,7 +10,7 @@ export async function GET(request) {
   if (!key) return NextResponse.json({ error: "TMDB_API_KEY is not set" }, { status: 500 });
 
   const res = await fetch(
-    `https://api.themoviedb.org/3/movie/${encodeURIComponent(movieId)}?api_key=${encodeURIComponent(key)}&append_to_response=credits,release_dates`
+    `https://api.themoviedb.org/3/movie/${encodeURIComponent(movieId)}?api_key=${encodeURIComponent(key)}&append_to_response=credits,release_dates,keywords`
   );
   const data = await res.json();
 
@@ -21,6 +21,7 @@ export async function GET(request) {
   const crew = data.credits?.crew || [];
   const directors = crew.filter((c) => c.job === "Director");
   const writers = crew.filter((c) => ["Writer", "Screenplay", "Story"].includes(c.job));
+  const keywords = data.keywords?.keywords || []; // TMDB nests it as { keywords: { keywords: [...] } } for movies
 
   return NextResponse.json({
     runtime: data.runtime || null,
@@ -30,6 +31,8 @@ export async function GET(request) {
     directorNames: directors.map((c) => c.name),
     writerIds: writers.map((c) => c.id),
     writerNames: writers.map((c) => c.name),
+    keywordIds: keywords.map((k) => k.id),
+    keywordNames: keywords.map((k) => k.name),
     certification,
   });
 }

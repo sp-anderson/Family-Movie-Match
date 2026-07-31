@@ -10,10 +10,10 @@ export async function GET(request) {
   return NextResponse.json({ ratings: ratings || {} });
 }
 
-// POST /api/ratings  body: { email, movieId, rating, genreIds, castIds, directorIds, writerIds }
+// POST /api/ratings  body: { email, movieId, rating, genreIds, castIds, directorIds, writerIds, keywordIds }
 export async function POST(request) {
   const body = await request.json();
-  const { email, movieId, rating, genreIds, castIds, directorIds, writerIds } = body;
+  const { email, movieId, rating, genreIds, castIds, directorIds, writerIds, keywordIds } = body;
   if (!email || !movieId || ![1, 2, 3, 4].includes(rating)) {
     return NextResponse.json({ error: "email, movieId, and rating (1-4) required" }, { status: 400 });
   }
@@ -26,6 +26,7 @@ export async function POST(request) {
     castIds: castIds || existing.castIds || [],
     directorIds: directorIds || existing.directorIds || [],
     writerIds: writerIds || existing.writerIds || [],
+    keywordIds: keywordIds || existing.keywordIds || [],
   };
   await kv.set(`user:${email}:ratings`, ratings);
   return NextResponse.json({ ratings });
