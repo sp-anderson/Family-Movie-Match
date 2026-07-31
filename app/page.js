@@ -2714,17 +2714,16 @@ export default function Home() {
               const rating = ratingPromptMovie ? true : false;
               return (
               <div>
-                <div className="flex items-center justify-center gap-3 mb-2">
-                  <div className="text-center text-xs text-cinema-mutedDark font-bold">{deck.length} left in your stack</div>
-                  {lastAction && !rating && (
+                {lastAction && !rating && (
+                  <div className="flex items-center justify-center mb-2">
                     <button
                       onClick={undoLastAction}
                       className="flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-cinema-panel border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold hover:text-cinema-gold"
                     >
                       <RotateCcw className="w-3 h-3" /> Undo
                     </button>
-                  )}
-                </div>
+                  </div>
+                )}
                 <div
                   ref={cardRef}
                   onPointerDown={rating ? undefined : onPointerDown}
