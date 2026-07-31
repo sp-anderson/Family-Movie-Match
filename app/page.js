@@ -1277,7 +1277,17 @@ export default function Home() {
   }
 
   const myMember = members.find((m) => m.email === email); // active room's record (for room-scoped role UI)
-  const myFamilyMember = familyMembers.find((m) => m.email === email); // permanent family record — source of truth for safety
+  // when you're actually in your own permanent family, "members" IS the
+  // permanent family list and is already kept fresh everywhere — use it
+  // directly rather than a second, separately-tracked copy that has to be
+  // manually re-synced at every single write path (which is exactly how
+  // this went stale before). Only fall back to the separate familyMembers
+  // snapshot when you're in a temporary Movie Night room, specifically so
+  // a rating cap still applies there instead of using that room's own list.
+  const myFamilyMember =
+    activeRoomCode === profile?.group
+      ? members.find((m) => m.email === email)
+      : familyMembers.find((m) => m.email === email); // permanent family record — source of truth for safety
   const isPendingMinor = profile?.isMinor && profile?.consentStatus !== "approved";
   const myMaxRating = isPendingMinor
     ? "G"
