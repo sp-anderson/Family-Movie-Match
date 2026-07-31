@@ -257,7 +257,7 @@ function FilterSortBar({ sort, setSort, genreFilter, setGenreFilter, castQuery, 
   );
 }
 
-const RATING_LABELS = { 1: "Not for me", 2: "It was okay", 3: "Liked it", 4: "★ Favorite" };
+const RATING_LABELS = { 1: "Not for me", 2: "It was okay", 3: "Liked it", 4: "★ Loved it" };
 function RatingControl({ movie, ratings, onRate }) {
   const current = ratings[movie.id]?.rating;
   return (
@@ -1451,7 +1451,7 @@ export default function Home() {
   }, [votes, email]);
 
   const RATING_THRESHOLD_FOR_PERSONALIZATION = 5;
-  const RATING_WEIGHTS = { 1: -0.5, 2: 0.1, 3: 0.6, 4: 1.0 }; // Dislike / OK (near-neutral) / Liked / Favorite
+  const RATING_WEIGHTS = { 1: -0.5, 2: 0.1, 3: 0.6, 4: 1.0 }; // Dislike / OK (near-neutral) / Liked / Loved it
   const NO_VOTE_WEIGHT = -0.3; // mild negative — a pass isn't as strong a signal as an actual dislike rating
   const AFFINITY_HALF_LIFE_DAYS = 304; // ~10 months — older ratings gradually count for less
   // director/writer overlap is a much more specific, predictive signal than
@@ -2774,7 +2774,7 @@ export default function Home() {
                           </button>
                           <button onClick={() => saveRating(ratingPromptMovie, 4)} className="flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-full hover:bg-cinema-gold/20">
                             <Star className="w-4 h-4 text-cinema-gold" fill="currentColor" />
-                            <span className="text-[9px] text-stone-50">Favorite</span>
+                            <span className="text-[9px] text-stone-50">Loved it</span>
                           </button>
                         </div>
                         <button onClick={(e) => { e.stopPropagation(); dismissRatingPrompt(); }} className="text-[11px] text-cinema-mutedLight font-bold px-2 py-1">
