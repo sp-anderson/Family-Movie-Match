@@ -2073,7 +2073,7 @@ export default function Home() {
           <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
           <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
           <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
-          <ProviderRow movieId={m.id} region={profile?.region} />
+          <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
           <TrailerButton movieId={m.id} />
         </div>
       </div>
@@ -2089,7 +2089,7 @@ export default function Home() {
           <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
           <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
           <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
-          <ProviderRow movieId={m.id} region={profile?.region} />
+          <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
           <TrailerButton movieId={m.id} />
           <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
           <VoteSwitcher current="yes" onSet={(choice) => castVoteWithPrompt(m, choice)} />
@@ -2993,7 +2993,7 @@ export default function Home() {
                         <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
                         <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
                         <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
-                        <ProviderRow movieId={m.id} region={profile?.region} />
+                        <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
                         <TrailerButton movieId={m.id} />
                         <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                         <VoteSwitcher current="yes" onSet={(choice) => castVoteWithPrompt(m, choice)} />
@@ -3020,7 +3020,7 @@ export default function Home() {
                         <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
                         <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
                         <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
-                        <ProviderRow movieId={m.id} region={profile?.region} />
+                        <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
                         <TrailerButton movieId={m.id} />
                         <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                         <RatingControl movie={m} ratings={ratings} onRate={saveRating} />
@@ -3047,7 +3047,7 @@ export default function Home() {
                         <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
                         <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
                         <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
-                        <ProviderRow movieId={m.id} region={profile?.region} />
+                        <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
                         <TrailerButton movieId={m.id} />
                         <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                         <VoteSwitcher current="no" onSet={(choice) => castVoteWithPrompt(m, choice)} />
@@ -3074,7 +3074,7 @@ export default function Home() {
                         <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
                         <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
                         <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
-                        <ProviderRow movieId={m.id} region={profile?.region} />
+                        <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
                         <TrailerButton movieId={m.id} />
                         <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                         <VoteSwitcher onSet={(choice) => castVoteWithPrompt(m, choice)} />
@@ -3159,7 +3159,7 @@ export default function Home() {
                             <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
                             <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
                             <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
-                            <ProviderRow movieId={m.id} region={profile?.region} />
+                            <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
                             <TrailerButton movieId={m.id} />
                             <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                             <div className="text-[11px] text-cinema-muted mt-1">
@@ -3193,7 +3193,7 @@ export default function Home() {
                           <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
                           <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
                           <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
-                          <ProviderRow movieId={m.id} region={profile?.region} />
+                          <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
                           <TrailerButton movieId={m.id} />
                           <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                           <div className="text-[11px] text-cinema-muted mt-1">
