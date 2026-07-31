@@ -4,13 +4,19 @@ import { sendEmail } from "../../../lib/email";
 import crypto from "crypto";
 
 // GET /api/consent?token=X  -> status info for the approval page
+// GET /api/consent?childEmail=X -> look up a pending/approved record without a token (for the Family tab)
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const token = searchParams.get("token");
-  if (!token) return NextResponse.json({ error: "token required" }, { status: 400 });
-  const record = await kv.get(`consent:${token}`);
+  const childEmail = searchParams.get("childEmail");
+  let actualToken = token;
+  if (!actualToken && childEmail) {
+    actualToken = await kv.get(`consent-by-child:${childEmail}`);
+  }
+  if (!actualToken) return NextResponse.json({ error: "token or childEmail required" }, { status: 400 });
+  const record = await kv.get(`consent:${actualToken}`);
   if (!record) return NextResponse.json({ error: "not found" }, { status: 404 });
-  return NextResponse.json({ record });
+  return NextResponse.json({ record, token: actualToken });
 }
 
 // POST /api/consent
@@ -76,15 +82,19 @@ export async function POST(request) {
     childProfile.approvedRating = maxRating;
     await kv.set(`user:${record.childEmail}:profile`, childProfile);
 
-    // update the child's family member record too, reusing the existing
-    // parent/child rating-restriction system already in the app
-    if (record.childGroup) {
-      const members = (await kv.get(`group:${record.childGroup}:members`)) || [];
+    // sync the child's family member record too, reusing the existing
+    // parent/child rating-restriction system already in the app.
+    // Use the child's CURRENT group, not the one captured back when the
+    // request was first sent — that's almost always null, since a kid
+    // usually hasn't joined a family yet at that point in the signup flow.
+    const currentGroup = childProfile.group || record.childGroup;
+    if (currentGroup) {
+      const members = (await kv.get(`group:${currentGroup}:members`)) || [];
       const idx = members.findIndex((m) => m.email === record.childEmail);
       if (idx >= 0) {
         members[idx] = { ...members[idx], role: "child", maxRating };
+        await kv.set(`group:${currentGroup}:members`, members);
       }
-      await kv.set(`group:${record.childGroup}:members`, members);
     }
 
     // confirmatory follow-up email to the parent — this is the "plus" in

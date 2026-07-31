@@ -572,6 +572,35 @@ export default function Home() {
     setParentConsentBusy(false);
   }
 
+  async function checkConsentStatus() {
+    if (!email) return;
+    try {
+      const res = await fetch(`/api/profile?email=${encodeURIComponent(email)}`);
+      const data = await res.json();
+      if (data.profile) {
+        setProfile((prev) => ({ ...prev, ...data.profile }));
+        // if approval just landed and we already have a family, sync the
+        // rating right away instead of waiting for the next full page load
+        if (data.profile.isMinor && data.profile.consentStatus === "approved" && data.profile.group) {
+          const myRec = (members || []).find((m) => m.email === email);
+          if (myRec && myRec.maxRating !== data.profile.approvedRating) {
+            await saveMember(data.profile.group, { ...myRec, role: "child", maxRating: data.profile.approvedRating });
+            await loadGroup(data.profile.group);
+          }
+        }
+      }
+    } catch {
+      // silent — this is a background convenience check, not a critical action
+    }
+  }
+
+  useEffect(() => {
+    if (!profile?.isMinor || profile?.consentStatus === "approved") return;
+    const t = setInterval(checkConsentStatus, 45000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line
+  }, [profile?.isMinor, profile?.consentStatus]);
+
   const [nightBusy, setNightBusy] = useState(false);
   const [nightCopied, setNightCopied] = useState(null); // "code" | "message" | null
   const [instantMatches, setInstantMatches] = useState([]); // movies both people in a movie-night already said yes to, historically
@@ -925,6 +954,56 @@ export default function Home() {
 
   async function setMemberRole(member, role) {
     await saveMember(profile.group, { ...member, role });
+  }
+
+  const [pendingConsent, setPendingConsent] = useState({}); // email -> record (only pending ones)
+  const [approvingEmail, setApprovingEmail] = useState(null);
+  const [approvingRating, setApprovingRating] = useState("PG");
+
+  useEffect(() => {
+    if (screen !== "group" || !members.length) return;
+    let cancelled = false;
+    (async () => {
+      const results = await Promise.all(
+        members.map((m) =>
+          fetch(`/api/consent?childEmail=${encodeURIComponent(m.email)}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null)
+        )
+      );
+      if (cancelled) return;
+      const map = {};
+      members.forEach((m, i) => {
+        const rec = results[i]?.record;
+        if (rec && rec.status === "pending") map[m.email] = { ...rec, token: results[i].token };
+      });
+      setPendingConsent(map);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [screen, members]);
+
+  async function approveFromFamilyTab(memberEmail) {
+    const rec = pendingConsent[memberEmail];
+    if (!rec) return;
+    try {
+      await fetch("/api/consent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "approve", token: rec.token, maxRating: approvingRating }),
+      });
+      setPendingConsent((prev) => {
+        const next = { ...prev };
+        delete next[memberEmail];
+        return next;
+      });
+      setApprovingEmail(null);
+      const data = await loadGroup(activeRoomCode);
+      setFamilyMembers((data && data.members) || []);
+    } catch {
+      // if this fails they can just try again — nothing destructive happened
+    }
   }
 
   async function saveMember(group, memberObj) {
@@ -1878,8 +1957,11 @@ export default function Home() {
         </div>
       )}
       {isPendingMinor && profile?.group && (
-        <div className="px-5 py-2 bg-cinema-gold/15 border-b border-cinema-gold text-center text-xs font-bold text-cinema-gold">
-          Waiting on parent approval — showing G-rated titles only for now
+        <div className="px-5 py-2 bg-cinema-gold/15 border-b border-cinema-gold text-center text-xs font-bold text-cinema-gold flex items-center justify-center gap-2 flex-wrap">
+          <span>Waiting on parent approval — showing G-rated titles only for now</span>
+          <button onClick={checkConsentStatus} className="underline hover:no-underline">
+            Already approved? Check now
+          </button>
         </div>
       )}
       <div className="px-5 pt-5 pb-3 flex items-center justify-between border-b border-cinema-border/60">
@@ -2891,6 +2973,47 @@ export default function Home() {
                       <span className="text-xs font-bold text-cinema-muted">
                         Max rating: {m.maxRating || "No limit"}
                       </span>
+                    )}
+                  </div>
+                )}
+                {myMember?.role === "parent" && pendingConsent[m.email] && (
+                  <div className="mt-2 pt-2 border-t border-cinema-border">
+                    <div className="text-xs font-bold text-cinema-gold mb-2">Waiting on your approval</div>
+                    {approvingEmail === m.email ? (
+                      <div>
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {RATINGS.map((r) => (
+                            <button
+                              key={r}
+                              onClick={() => setApprovingRating(r)}
+                              className={
+                                "text-[11px] font-bold px-2 py-1 rounded-full border " +
+                                (approvingRating === r ? "bg-cinema-gold text-cinema-ink border-cinema-gold" : "border-cinema-border text-cinema-muted hover:border-cinema-gold")
+                              }
+                            >
+                              {r}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => approveFromFamilyTab(m.email)} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-cinema-gold text-cinema-ink hover:bg-cinema-goldLight">
+                            Approve for {approvingRating}
+                          </button>
+                          <button onClick={() => setApprovingEmail(null)} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-cinema-panel border border-cinema-border text-cinema-mutedLight">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setApprovingEmail(m.email);
+                          setApprovingRating("PG");
+                        }}
+                        className="text-xs font-bold px-3 py-1.5 rounded-lg bg-cinema-gold text-cinema-ink hover:bg-cinema-goldLight"
+                      >
+                        Approve now
+                      </button>
                     )}
                   </div>
                 )}
