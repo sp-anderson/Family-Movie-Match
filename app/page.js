@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
-import { Heart, X, Users, Settings, Play, Sparkles, Film, LogOut, RefreshCw, Star, Ticket, Eye, Clock, Compass, Bookmark } from "lucide-react";
+import { Heart, X, Users, Settings, Play, Sparkles, Film, LogOut, RefreshCw, Star, Ticket, Eye, Clock, Compass, Bookmark, RotateCcw } from "lucide-react";
 
 const SERVICES = [
   { id: 8, name: "Netflix" },
@@ -391,6 +391,7 @@ export default function Home() {
   const [votes, setVotes] = useState({});
   const [ratings, setRatings] = useState({}); // { movieId: { rating: 1-4, ratedAt } } — this user's own ratings
   const [ratingPromptMovie, setRatingPromptMovie] = useState(null); // movie object, shown as a light nudge after marking "seen"
+  const [lastAction, setLastAction] = useState(null); // { movieId, previousChoice } — single-level undo for the last vote cast
   const [migrationItems, setMigrationItems] = useState([]); // [{ originalTitle, candidate, rating, skipped }]
   const [migrationLoading, setMigrationLoading] = useState(false);
   const [migrationLoaded, setMigrationLoaded] = useState(false);
@@ -1396,6 +1397,8 @@ export default function Home() {
   }, [deck.length ? deck[0]?.id : null]);
 
   async function castVote(movieId, choice) {
+    const previousChoice = (votes[movieId] || {})[email] || null;
+    setLastAction({ movieId, previousChoice });
     // optimistic: update locally right away so the next card appears
     // instantly, instead of waiting on the network round-trip
     setVotes((prev) => ({ ...prev, [movieId]: { ...(prev[movieId] || {}), [email]: choice } }));
@@ -1408,6 +1411,32 @@ export default function Home() {
     } catch {
       // the optimistic update already stuck locally; a later refresh will reconcile
     }
+  }
+
+  async function undoLastAction() {
+    if (!lastAction) return;
+    const { movieId, previousChoice } = lastAction;
+    setVotes((prev) => {
+      const next = { ...prev };
+      const forThisMovie = { ...(next[movieId] || {}) };
+      if (previousChoice) {
+        forThisMovie[email] = previousChoice;
+      } else {
+        delete forThisMovie[email];
+      }
+      next[movieId] = forThisMovie;
+      return next;
+    });
+    try {
+      await fetch("/api/uservotes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, movieId, choice: previousChoice }),
+      });
+    } catch {
+      // optimistic update already applied locally
+    }
+    setLastAction(null);
   }
 
   function isSpotlightedByMe(movieId) {
@@ -2281,7 +2310,17 @@ export default function Home() {
               const rating = ratingPromptMovie ? true : false;
               return (
               <div>
-                <div className="text-center text-xs text-cinema-mutedDark mb-2 font-bold">{deck.length} left in your stack</div>
+                <div className="flex items-center justify-center gap-3 mb-2">
+                  <div className="text-center text-xs text-cinema-mutedDark font-bold">{deck.length} left in your stack</div>
+                  {lastAction && !rating && (
+                    <button
+                      onClick={undoLastAction}
+                      className="flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-cinema-panel border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold hover:text-cinema-gold"
+                    >
+                      <RotateCcw className="w-3 h-3" /> Undo
+                    </button>
+                  )}
+                </div>
                 <div
                   ref={cardRef}
                   onPointerDown={rating ? undefined : onPointerDown}
