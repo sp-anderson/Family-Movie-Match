@@ -1408,7 +1408,7 @@ export default function Home() {
   const RATING_THRESHOLD_FOR_PERSONALIZATION = 5;
   const RATING_WEIGHTS = { 1: -0.5, 2: 0.1, 3: 0.6, 4: 1.0 }; // Dislike / OK (near-neutral) / Liked / Favorite
   const NO_VOTE_WEIGHT = -0.3; // mild negative — a pass isn't as strong a signal as an actual dislike rating
-  const AFFINITY_HALF_LIFE_DAYS = 180; // older ratings gradually count for less
+  const AFFINITY_HALF_LIFE_DAYS = 304; // ~10 months — older ratings gradually count for less
   // director/writer overlap is a much more specific, predictive signal than
   // genre overlap (there are only ~20 genres total, so genre matches are
   // common and noisy; sharing a specific director with something you rated
