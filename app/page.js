@@ -1416,6 +1416,7 @@ export default function Home() {
   async function undoLastAction() {
     if (!lastAction) return;
     const { movieId, previousChoice } = lastAction;
+    if (ratingPromptMovie && ratingPromptMovie.id === movieId) setRatingPromptMovie(null);
     setVotes((prev) => {
       const next = { ...prev };
       const forThisMovie = { ...(next[movieId] || {}) };
@@ -2383,8 +2384,11 @@ export default function Home() {
                       </>
                     )}
                     {rating && (
-                      <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-end pb-4 gap-2.5">
-                        <div className="bg-cinema-panel rounded-full p-1 flex gap-1 border border-cinema-border">
+                      <div
+                        className="absolute inset-0 bg-black/55 flex flex-col items-center justify-end pb-4 gap-2.5"
+                        onClick={undoLastAction}
+                      >
+                        <div className="bg-cinema-panel rounded-full p-1 flex gap-1 border border-cinema-border" onClick={(e) => e.stopPropagation()}>
                           <button onClick={() => saveRating(ratingPromptMovie, 1)} className="flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-full hover:bg-cinema-orange/20">
                             <X className="w-4 h-4 text-cinema-orangeLight" />
                             <span className="text-[9px] text-stone-50">Not for me</span>
@@ -2402,7 +2406,7 @@ export default function Home() {
                             <span className="text-[9px] text-stone-50">Favorite</span>
                           </button>
                         </div>
-                        <button onClick={dismissRatingPrompt} className="text-[11px] text-cinema-mutedLight font-bold px-2 py-1">
+                        <button onClick={(e) => { e.stopPropagation(); dismissRatingPrompt(); }} className="text-[11px] text-cinema-mutedLight font-bold px-2 py-1">
                           Not now
                         </button>
                       </div>
