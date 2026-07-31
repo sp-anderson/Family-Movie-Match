@@ -17,9 +17,19 @@ export async function GET(request) {
   const usReleases = data.release_dates?.results?.find((r) => r.iso_3166_1 === "US");
   const certification = (usReleases?.release_dates || []).map((r) => r.certification).find((c) => c) || null;
 
+  const castList = (data.credits?.cast || []).slice(0, 4);
+  const crew = data.credits?.crew || [];
+  const directors = crew.filter((c) => c.job === "Director");
+  const writers = crew.filter((c) => ["Writer", "Screenplay", "Story"].includes(c.job));
+
   return NextResponse.json({
     runtime: data.runtime || null,
-    cast: (data.credits?.cast || []).slice(0, 4).map((c) => c.name),
+    cast: castList.map((c) => c.name),
+    castIds: castList.map((c) => c.id),
+    directorIds: directors.map((c) => c.id),
+    directorNames: directors.map((c) => c.name),
+    writerIds: writers.map((c) => c.id),
+    writerNames: writers.map((c) => c.name),
     certification,
   });
 }

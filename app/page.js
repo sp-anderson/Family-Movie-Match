@@ -422,12 +422,31 @@ export default function Home() {
     for (const item of migrationItems) {
       if (item.skipped || !item.candidate) continue;
       try {
+        let credits = {};
+        try {
+          const dRes = await fetch(`/api/details?movieId=${item.candidate.id}`);
+          credits = await dRes.json();
+        } catch {
+          // if this fails, the rating still saves with genre data alone
+        }
+        const payload = {
+          email,
+          movieId: item.candidate.id,
+          rating: item.rating,
+          genreIds: item.candidate.genre_ids || [],
+          castIds: credits?.castIds || [],
+          directorIds: credits?.directorIds || [],
+          writerIds: credits?.writerIds || [],
+        };
         await fetch("/api/ratings", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, movieId: item.candidate.id, rating: item.rating, genreIds: item.candidate.genre_ids || [] }),
+          body: JSON.stringify(payload),
         });
-        setRatings((prev) => ({ ...prev, [item.candidate.id]: { rating: item.rating, ratedAt: Date.now(), genreIds: item.candidate.genre_ids || [] } }));
+        setRatings((prev) => ({
+          ...prev,
+          [item.candidate.id]: { rating: item.rating, ratedAt: Date.now(), genreIds: payload.genreIds, castIds: payload.castIds, directorIds: payload.directorIds, writerIds: payload.writerIds },
+        }));
       } catch {
         // one failed migration item shouldn't block the rest
       }
@@ -1388,33 +1407,56 @@ export default function Home() {
   const RATING_WEIGHTS = { 1: -0.5, 2: 0.1, 3: 0.6, 4: 1.0 }; // Dislike / OK (near-neutral) / Liked / Favorite
   const NO_VOTE_WEIGHT = -0.3; // mild negative — a pass isn't as strong a signal as an actual dislike rating
   const AFFINITY_HALF_LIFE_DAYS = 180; // older ratings gradually count for less
+  // director/writer overlap is a much more specific, predictive signal than
+  // genre overlap (there are only ~20 genres total, so genre matches are
+  // common and noisy; sharing a specific director with something you rated
+  // highly is rare and means a lot more) — weighted accordingly
+  const CAST_WEIGHT_MULT = 1;
+  const WRITER_WEIGHT_MULT = 2;
+  const DIRECTOR_WEIGHT_MULT = 3;
 
-  function computeGenreAffinity() {
-    const affinity = {};
+  function computeTasteProfile() {
+    const genre = {}, cast = {}, director = {}, writer = {};
     const now = Date.now();
-    Object.values(ratings).forEach(({ rating, ratedAt, genreIds }) => {
-      if (!genreIds || !genreIds.length || !RATING_WEIGHTS[rating]) return;
+    Object.values(ratings).forEach(({ rating, ratedAt, genreIds, castIds, directorIds, writerIds }) => {
+      if (!RATING_WEIGHTS[rating]) return;
       const daysAgo = (now - (ratedAt || now)) / (1000 * 60 * 60 * 24);
       const decay = Math.pow(0.5, daysAgo / AFFINITY_HALF_LIFE_DAYS);
       const weight = RATING_WEIGHTS[rating] * decay;
-      genreIds.forEach((g) => {
-        affinity[g] = (affinity[g] || 0) + weight;
-      });
+      (genreIds || []).forEach((g) => { genre[g] = (genre[g] || 0) + weight; });
+      (castIds || []).forEach((c) => { cast[c] = (cast[c] || 0) + weight; });
+      (directorIds || []).forEach((d) => { director[d] = (director[d] || 0) + weight; });
+      (writerIds || []).forEach((w) => { writer[w] = (writer[w] || 0) + weight; });
     });
     if (pool) {
       pool.movies.forEach((m) => {
         if ((votes[m.id] || {})[email] === "no") {
-          (m.genre_ids || []).forEach((g) => {
-            affinity[g] = (affinity[g] || 0) + NO_VOTE_WEIGHT;
-          });
+          (m.genre_ids || []).forEach((g) => { genre[g] = (genre[g] || 0) + NO_VOTE_WEIGHT; });
+          const credits = detailsCache[m.id];
+          if (credits) {
+            (credits.castIds || []).forEach((c) => { cast[c] = (cast[c] || 0) + NO_VOTE_WEIGHT; });
+            (credits.directorIds || []).forEach((d) => { director[d] = (director[d] || 0) + NO_VOTE_WEIGHT; });
+            (credits.writerIds || []).forEach((w) => { writer[w] = (writer[w] || 0) + NO_VOTE_WEIGHT; });
+          }
         }
       });
     }
-    return affinity;
+    return { genre, cast, director, writer };
   }
 
-  function scoreMovieByAffinity(movie, affinity) {
-    return (movie.genre_ids || []).reduce((sum, g) => sum + (affinity[g] || 0), 0);
+  function scoreMovieByProfile(movie, profile) {
+    let score = (movie.genre_ids || []).reduce((sum, g) => sum + (profile.genre[g] || 0), 0);
+    // cast/crew scoring only kicks in for movies we've already fetched
+    // credits for (rated movies, or ones the background prefetch reached) —
+    // degrades gracefully to genre-only for everything else, rather than
+    // trying to fetch credits for the whole pool up front
+    const credits = detailsCache[movie.id];
+    if (credits) {
+      score += (credits.castIds || []).reduce((sum, c) => sum + (profile.cast[c] || 0), 0) * CAST_WEIGHT_MULT;
+      score += (credits.directorIds || []).reduce((sum, d) => sum + (profile.director[d] || 0), 0) * DIRECTOR_WEIGHT_MULT;
+      score += (credits.writerIds || []).reduce((sum, w) => sum + (profile.writer[w] || 0), 0) * WRITER_WEIGHT_MULT;
+    }
+    return score;
   }
 
   const deck = useMemo(() => {
@@ -1450,8 +1492,8 @@ export default function Home() {
       });
     }
     if (Object.keys(ratings).length >= RATING_THRESHOLD_FOR_PERSONALIZATION) {
-      const affinity = computeGenreAffinity();
-      movies = [...movies].sort((a, b) => scoreMovieByAffinity(b, affinity) - scoreMovieByAffinity(a, affinity));
+      const tasteProfile = computeTasteProfile();
+      movies = [...movies].sort((a, b) => scoreMovieByProfile(b, tasteProfile) - scoreMovieByProfile(a, tasteProfile));
     }
     if (skippedOrder.length) {
       const skippedSet = new Set(skippedOrder);
@@ -1461,9 +1503,41 @@ export default function Home() {
     }
     return movies;
     // eslint-disable-next-line
-  }, [pool, myVotedIds, myMaxRating, certifications, votes, email, spotlight, reconsidered, skippedOrder, profile?.genres, ratings]);
+  }, [pool, myVotedIds, myMaxRating, certifications, votes, email, spotlight, reconsidered, skippedOrder, profile?.genres, ratings, detailsCache]);
   const currentMovie = deck[0];
   const currentMovieNudges = currentMovie ? nudgeRecommenders(currentMovie.id) : [];
+
+  useEffect(() => {
+    if (Object.keys(ratings).length < RATING_THRESHOLD_FOR_PERSONALIZATION) return;
+    const pending = deck.slice(0, 12).filter((m) => detailsCache[m.id] === undefined);
+    if (!pending.length) return;
+    let cancelled = false;
+    (async () => {
+      for (let i = 0; i < pending.length; i += 5) {
+        if (cancelled) return;
+        const batch = pending.slice(i, i + 5);
+        const results = await Promise.all(
+          batch.map((m) =>
+            fetch(`/api/details?movieId=${m.id}`)
+              .then((r) => (r.ok ? r.json() : null))
+              .catch(() => null)
+          )
+        );
+        if (cancelled) return;
+        setDetailsCache((prev) => {
+          const next = { ...prev };
+          batch.forEach((m, idx) => {
+            if (next[m.id] === undefined) next[m.id] = results[idx] || { cast: [], castIds: [], directorIds: [], writerIds: [] };
+          });
+          return next;
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line
+  }, [deck.slice(0, 12).map((m) => m.id).join(","), Object.keys(ratings).length]);
 
   const ratingCheckPending = myMaxRating && pool ? pool.movies.some((m) => certifications[m.id] === undefined) : false;
 
@@ -1668,17 +1742,35 @@ export default function Home() {
 
   async function saveRating(movie, rating) {
     const movieId = movie.id;
-    setRatings((prev) => ({ ...prev, [movieId]: { rating, ratedAt: Date.now(), genreIds: movie.genre_ids || [] } }));
+    const genreIds = movie.genre_ids || [];
+    // optimistic: get the rating itself saved instantly, backfill credits after
+    setRatings((prev) => ({ ...prev, [movieId]: { rating, ratedAt: Date.now(), genreIds, ...(detailsCache[movieId] || {}) } }));
+    setRatingPromptMovie(null);
     try {
+      let credits = detailsCache[movieId];
+      if (!credits) {
+        const dRes = await fetch(`/api/details?movieId=${movieId}`);
+        credits = await dRes.json();
+        setDetailsCache((prev) => ({ ...prev, [movieId]: credits }));
+      }
+      const payload = {
+        email,
+        movieId,
+        rating,
+        genreIds,
+        castIds: credits?.castIds || [],
+        directorIds: credits?.directorIds || [],
+        writerIds: credits?.writerIds || [],
+      };
+      setRatings((prev) => ({ ...prev, [movieId]: { rating, ratedAt: Date.now(), genreIds, castIds: payload.castIds, directorIds: payload.directorIds, writerIds: payload.writerIds } }));
       await fetch("/api/ratings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, movieId, rating, genreIds: movie.genre_ids || [] }),
+        body: JSON.stringify(payload),
       });
     } catch {
-      // optimistic update already applied — a later refresh will reconcile
+      // the rating itself already saved above — credits are a nice-to-have enhancement
     }
-    setRatingPromptMovie(null);
   }
 
   function dismissRatingPrompt() {
