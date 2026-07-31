@@ -129,6 +129,18 @@ without it, the Apple button just won't.
 4. Add both `RESEND_API_KEY` and `RESEND_FROM_EMAIL` to Vercel's Environment
    Variables too.
 
+## 12. Account deletion (30-day delayed purge)
+
+Settings → "Delete my account" schedules deletion 30 days out (cancellable
+any time before then from the banner that appears). The actual permanent
+deletion runs via a **Vercel Cron job** (`vercel.json`, hits
+`/api/cron/purge-accounts` daily) — this requires no extra setup beyond
+adding `CRON_SECRET` to your env vars (both locally and on Vercel). Vercel
+automatically sends that secret as a Bearer token on scheduled calls, so the
+route only runs when Vercel itself triggers it, not for anyone else. Cron
+jobs are enabled by default once `vercel.json` is present in the repo —
+nothing to toggle on in the dashboard.
+
 ## If something breaks
 
 Vercel dashboard → Deployments → click the latest one → view the build logs,

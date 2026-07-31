@@ -507,6 +507,51 @@ export default function Home() {
   }
 
   const [showDobEdit, setShowDobEdit] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
+  async function requestAccountDeletion() {
+    setDeleteBusy(true);
+    try {
+      const res = await fetch("/api/account/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, action: "request" }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setProfile((prev) => ({ ...prev, deletionScheduledFor: data.scheduledFor }));
+        setShowDeleteConfirm(false);
+      } else {
+        setError(data.error || "Couldn't schedule deletion. Try again.");
+      }
+    } catch {
+      setError("Couldn't schedule deletion. Try again.");
+    }
+    setDeleteBusy(false);
+  }
+
+  async function cancelAccountDeletion() {
+    setDeleteBusy(true);
+    try {
+      await fetch("/api/account/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, action: "cancel" }),
+      });
+      setProfile((prev) => {
+        const next = { ...prev };
+        delete next.deletionScheduledFor;
+        delete next.deletionRequestedAt;
+        return next;
+      });
+    } catch {
+      setError("Couldn't cancel deletion. Try again.");
+    }
+    setDeleteBusy(false);
+  }
+
+
 
   async function saveDobEdit() {
     setDobError("");
@@ -2009,6 +2054,14 @@ export default function Home() {
           {stillPendingNote && <span className="text-cinema-mutedLight font-normal">Still waiting — nothing yet.</span>}
         </div>
       )}
+      {profile?.deletionScheduledFor && (
+        <div className="px-5 py-2 bg-cinema-orange/15 border-b border-cinema-orange text-center text-xs font-bold text-cinema-orangeLight flex items-center justify-center gap-2 flex-wrap">
+          <span>Account deletion scheduled for {new Date(profile.deletionScheduledFor).toLocaleDateString()}</span>
+          <button onClick={cancelAccountDeletion} disabled={deleteBusy} className="underline hover:no-underline disabled:opacity-60">
+            {deleteBusy ? "Cancelling…" : "Cancel"}
+          </button>
+        </div>
+      )}
       <div className="px-5 pt-5 pb-3 flex items-center justify-between border-b border-cinema-border/60">
         <div className="flex items-center gap-2">
           <Film className="w-6 h-6 text-cinema-gold" />
@@ -2405,6 +2458,36 @@ export default function Home() {
             </div>
             )}
             <button onClick={handleSaveSetup} className="w-full py-2.5 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight">Save settings</button>
+
+            {roomMeta?.type !== "movie-night" && !profile?.deletionScheduledFor && (
+              <div className="mt-8 pt-5 border-t border-cinema-border">
+                {!showDeleteConfirm ? (
+                  <button onClick={() => setShowDeleteConfirm(true)} className="text-xs font-bold text-cinema-mutedDark hover:text-cinema-orangeLight">
+                    Delete my account
+                  </button>
+                ) : (
+                  <div className="px-3 py-3 rounded-lg bg-cinema-orange/10 border border-cinema-orange">
+                    <p className="text-xs text-cinema-orangeLight font-bold mb-1">Are you sure?</p>
+                    <p className="text-[11px] text-cinema-mutedLight mb-3">
+                      Your account stays active for 30 days after this — plenty of time to change your mind and cancel.
+                      After that, your profile, votes, ratings, and family membership are permanently deleted.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={requestAccountDeletion}
+                        disabled={deleteBusy}
+                        className="text-xs font-bold px-3 py-1.5 rounded-lg bg-cinema-orange text-cinema-ink hover:bg-cinema-orangeLight disabled:opacity-50"
+                      >
+                        {deleteBusy ? "Scheduling…" : "Yes, delete my account"}
+                      </button>
+                      <button onClick={() => setShowDeleteConfirm(false)} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-cinema-panel border border-cinema-border text-cinema-mutedLight">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
