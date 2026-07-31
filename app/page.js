@@ -767,6 +767,7 @@ export default function Home() {
   const [historyStatusFilter, setHistoryStatusFilter] = useState("all"); // all | yes | no | seen | review-later
 
   const cardRef = useRef(null);
+  const scoreCacheRef = useRef(new Map()); // movieId -> frozen personalization score, set once and never recomputed
   const draggingRef = useRef(false);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
@@ -1493,7 +1494,18 @@ export default function Home() {
     }
     if (Object.keys(ratings).length >= RATING_THRESHOLD_FOR_PERSONALIZATION) {
       const tasteProfile = computeTasteProfile();
-      movies = [...movies].sort((a, b) => scoreMovieByProfile(b, tasteProfile) - scoreMovieByProfile(a, tasteProfile));
+      // freeze each movie's score the first time it's computed. Without
+      // this, a card that's already visible could get silently reshuffled
+      // out from under someone the moment background-prefetched cast/crew
+      // data arrives for it (or for a neighboring card) and its score
+      // changes — jarring mid-decision. Once scored, a movie's position is
+      // locked in for the rest of this session, regardless of what data
+      // arrives afterward.
+      movies = [...movies].sort((a, b) => {
+        if (!scoreCacheRef.current.has(a.id)) scoreCacheRef.current.set(a.id, scoreMovieByProfile(a, tasteProfile));
+        if (!scoreCacheRef.current.has(b.id)) scoreCacheRef.current.set(b.id, scoreMovieByProfile(b, tasteProfile));
+        return scoreCacheRef.current.get(b.id) - scoreCacheRef.current.get(a.id);
+      });
     }
     if (skippedOrder.length) {
       const skippedSet = new Set(skippedOrder);
