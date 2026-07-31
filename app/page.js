@@ -124,18 +124,44 @@ function Chip({ active, onClick, children }) {
 }
 
 function ProviderRow({ movieId, region, inTheaters }) {
-  const [providers, setProviders] = useState(null);
+  const [data, setData] = useState(null);
   useEffect(() => {
     let cancelled = false;
     fetch(`/api/providers?movieId=${movieId}&region=${region || "CA"}`)
       .then((r) => r.json())
-      .then((d) => !cancelled && setProviders(d.providers || []))
-      .catch(() => !cancelled && setProviders([]));
+      .then((d) => !cancelled && setData(d))
+      .catch(() => !cancelled && setData({ providers: [], rent: [], buy: [], link: null }));
     return () => (cancelled = true);
   }, [movieId, region]);
 
-  if (providers === null) return <div className="text-[11px] text-cinema-mutedDark mt-1">Checking where to watch…</div>;
+  if (data === null) return <div className="text-[11px] text-cinema-mutedDark mt-1">Checking where to watch…</div>;
+  const providers = data.providers || [];
+  const rent = data.rent || [];
+  const buy = data.buy || [];
+
   if (providers.length === 0) {
+    const rentBuyNames = Array.from(new Set([...rent.map((p) => p.name), ...buy.map((p) => p.name)]));
+    if (rentBuyNames.length > 0 && data.link) {
+      return (
+        <div className="mt-1">
+          {inTheaters && <div className="text-[11px] text-cinema-orange font-bold mb-1">Now playing in theaters</div>}
+          <div className="text-[11px] text-cinema-mutedDark mb-1">Not on your streaming services — rent or buy:</div>
+          <div className="flex flex-wrap gap-1">
+            {rentBuyNames.map((name) => (
+              <a
+                key={name}
+                href={data.link}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-gold/20 text-cinema-gold font-bold hover:bg-cinema-gold/30"
+              >
+                {name}
+              </a>
+            ))}
+          </div>
+        </div>
+      );
+    }
     if (inTheaters) return <div className="text-[11px] text-cinema-orange font-bold mt-1">Now playing in theaters</div>;
     return <div className="text-[11px] text-cinema-mutedDark mt-1">Not currently on any of your services.</div>;
   }
