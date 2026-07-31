@@ -1502,8 +1502,14 @@ export default function Home() {
       movies = [...rest, ...pushedToEnd];
     }
     return movies;
+    // deliberately NOT depending on detailsCache here — as background-
+    // prefetched cast/crew data trickles in, we don't want the deck to
+    // live-reorder and yank the card someone's currently looking at out
+    // from under them. Newly arrived credit data still gets used for
+    // scoring, just the next time this recomputes for another reason
+    // (like an actual swipe), not as a disruptive mid-view reshuffle.
     // eslint-disable-next-line
-  }, [pool, myVotedIds, myMaxRating, certifications, votes, email, spotlight, reconsidered, skippedOrder, profile?.genres, ratings, detailsCache]);
+  }, [pool, myVotedIds, myMaxRating, certifications, votes, email, spotlight, reconsidered, skippedOrder, profile?.genres, ratings]);
   const currentMovie = deck[0];
   const currentMovieNudges = currentMovie ? nudgeRecommenders(currentMovie.id) : [];
 
