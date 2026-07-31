@@ -581,7 +581,27 @@ export default function Home() {
     setStillPendingNote(false);
     try {
       const res = await fetch(`/api/profile?email=${encodeURIComponent(email)}`);
-      const data = await res.json();
+      let data = await res.json();
+
+      // self-heal: if the profile still looks pending, check the actual
+      // consent record too — it may have been approved before the profile
+      // was ever synced (an older approval, or the parent used a link from
+      // before that sync step existed). If so, quietly re-run the approval
+      // sync using the rating the parent already chose.
+      if (data.profile?.isMinor && data.profile?.consentStatus !== "approved") {
+        const consentRes = await fetch(`/api/consent?childEmail=${encodeURIComponent(email)}`);
+        const consentData = await consentRes.json().catch(() => null);
+        if (consentData?.record?.status === "approved" && consentData.token) {
+          await fetch("/api/consent", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "approve", token: consentData.token, maxRating: consentData.record.approvedRating || "PG" }),
+          });
+          const res2 = await fetch(`/api/profile?email=${encodeURIComponent(email)}`);
+          data = await res2.json();
+        }
+      }
+
       if (data.profile) {
         setProfile((prev) => ({ ...prev, ...data.profile }));
         if (data.profile.isMinor && data.profile.consentStatus === "approved" && data.profile.group) {

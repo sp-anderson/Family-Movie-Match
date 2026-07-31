@@ -3,6 +3,9 @@ import { redis as kv } from "../../../lib/redis";
 import { sendEmail } from "../../../lib/email";
 import crypto from "crypto";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 // GET /api/consent?token=X  -> status info for the approval page
 // GET /api/consent?childEmail=X -> look up a pending/approved record without a token (for the Family tab)
 export async function GET(request) {
@@ -68,15 +71,17 @@ export async function POST(request) {
     if (!token || !maxRating) return NextResponse.json({ error: "token and maxRating required" }, { status: 400 });
     const record = await kv.get(`consent:${token}`);
     if (!record) return NextResponse.json({ error: "not found" }, { status: 404 });
-    if (record.status === "approved") return NextResponse.json({ record }); // already done, idempotent
+    const alreadyApproved = record.status === "approved";
 
     record.status = "approved";
-    record.approvedAt = Date.now();
+    record.approvedAt = record.approvedAt || Date.now();
     record.approvedRating = maxRating;
     await kv.set(`consent:${token}`, record);
 
     // update the child's own profile — this is what the app checks to
-    // determine whether they're still in the G-rated pending state
+    // determine whether they're still in the G-rated pending state.
+    // Always do this, even if the record was already marked approved —
+    // that catches records approved before this sync step existed.
     const childProfile = (await kv.get(`user:${record.childEmail}:profile`)) || {};
     childProfile.consentStatus = "approved";
     childProfile.approvedRating = maxRating;
@@ -98,16 +103,18 @@ export async function POST(request) {
     }
 
     // confirmatory follow-up email to the parent — this is the "plus" in
-    // the FTC's "email plus" verifiable-consent method
-    await sendEmail({
-      to: record.parentEmail,
-      subject: `Confirmed: you approved ${record.childName}'s account`,
-      html: `
-        <p>This confirms you approved <strong>${record.childName}</strong>'s (${record.childEmail}) account on Family Movie Match, with content limited to <strong>${maxRating}</strong> and under.</p>
-        <p>You can change this limit any time from the Family tab in the app if you also sign in as a parent on the same family.</p>
-        <p>If you did not do this, please contact us.</p>
-      `,
-    });
+    // the FTC's "email plus" verifiable-consent method. Only send it once.
+    if (!alreadyApproved) {
+      await sendEmail({
+        to: record.parentEmail,
+        subject: `Confirmed: you approved ${record.childName}'s account`,
+        html: `
+          <p>This confirms you approved <strong>${record.childName}</strong>'s (${record.childEmail}) account on Family Movie Match, with content limited to <strong>${maxRating}</strong> and under.</p>
+          <p>You can change this limit any time from the Family tab in the app if you also sign in as a parent on the same family.</p>
+          <p>If you did not do this, please contact us.</p>
+        `,
+      });
+    }
 
     return NextResponse.json({ record });
   }
