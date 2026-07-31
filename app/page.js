@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
-import { Heart, X, Users, Settings, Play, Sparkles, Film, LogOut, RefreshCw, Star, Ticket, Eye, Clock, Compass, Bookmark, RotateCcw } from "lucide-react";
+import { Heart, X, Users, Settings, Play, Sparkles, Film, LogOut, RefreshCw, Star, Ticket, Eye, Clock, Compass, Bookmark, RotateCcw, ShoppingCart } from "lucide-react";
 
 const SERVICES = [
   { id: 8, name: "Netflix" },
@@ -145,19 +145,25 @@ function ProviderRow({ movieId, region, inTheaters }) {
       return (
         <div className="mt-1">
           {inTheaters && <div className="text-[11px] text-cinema-orange font-bold mb-1">Now playing in theaters</div>}
-          <div className="text-[11px] text-cinema-mutedDark mb-1">Not on your streaming services — rent or buy:</div>
-          <div className="flex flex-wrap gap-1">
-            {rentBuyNames.map((name) => (
-              <a
-                key={name}
-                href={data.link}
-                target="_blank"
-                rel="noreferrer"
-                className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-gold/20 text-cinema-gold font-bold hover:bg-cinema-gold/30"
-              >
-                {name}
-              </a>
-            ))}
+          <div className="text-[11px] text-cinema-mutedDark mb-1">Not on your streaming services.</div>
+          <div className="px-2.5 py-2 rounded-lg border border-cinema-gold bg-cinema-gold/10">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <ShoppingCart className="w-3.5 h-3.5 text-cinema-gold" />
+              <span className="text-[11px] font-bold text-cinema-gold">Rent or buy elsewhere</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {rentBuyNames.map((name) => (
+                <a
+                  key={name}
+                  href={data.link}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[11px] px-2.5 py-1 rounded-full border border-cinema-gold text-cinema-gold hover:bg-cinema-gold/20"
+                >
+                  {name}
+                </a>
+              ))}
+            </div>
           </div>
         </div>
       );

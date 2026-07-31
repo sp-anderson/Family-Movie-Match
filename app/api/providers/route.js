@@ -26,6 +26,9 @@ export async function GET(request) {
     // rent/buy options together. Using it as a real, working destination for
     // now; once real affiliate deep links exist (direct retailer programs or
     // a JustWatch partner API), swap those in per-provider instead.
+    // once affiliate deep links exist, add per-provider price here too —
+    // TMDB doesn't give pricing today, that'll come from whichever
+    // affiliate/retailer API replaces the shared `link` fallback below
     rent: rent.map((p) => ({ id: p.provider_id, name: p.provider_name, logo: p.logo_path })),
     buy: buy.map((p) => ({ id: p.provider_id, name: p.provider_name, logo: p.logo_path })),
     link: (regionData && regionData.link) || null,
