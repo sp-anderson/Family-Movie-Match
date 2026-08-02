@@ -875,10 +875,20 @@ export default function Home() {
           setActiveRoomCode(roomCode);
           setRoomMeta(roomData.meta);
           await loadGroup(roomCode);
-        } else {
+        } else if (data.profile.group) {
           // room expired or vanished — fall back to the permanent family
           setActiveRoomCode(data.profile.group);
           setRoomMeta({ type: "family" });
+        } else {
+          // no permanent family either — this account only ever had a
+          // Movie Night, and that room's gone now. Send them back to join
+          // something fresh instead of landing on a blank screen.
+          setActiveRoomCode(null);
+          setRoomMeta(null);
+          setError("That Movie Night has ended. Join a family group, or enter a new Movie Night code.");
+          setScreen("join");
+          setLoadingProfile(false);
+          return;
         }
       }
 
@@ -1148,12 +1158,42 @@ export default function Home() {
 
   async function handleJoin() {
     setError("");
-    const group = groupInput.trim().toUpperCase();
-    if (!group) return setError("Enter a family group code.");
-    const merged = await saveProfile({ group });
-    const data = await loadGroup(group);
+    const code = groupInput.trim().toUpperCase();
+    if (!code) return setError("Enter a code.");
+
+    // figure out whether this is a Movie Night code or a permanent family
+    // code — Movie Nights have real room metadata, family groups don't
+    let roomData = null;
+    try {
+      const roomRes = await fetch(`/api/room?code=${encodeURIComponent(code)}`);
+      roomData = await roomRes.json();
+    } catch {
+      // if this check fails, fall through and treat it as a family code
+    }
+
+    if (roomData?.meta?.type === "movie-night") {
+      if (roomData.meta.expiresAt && roomData.meta.expiresAt < Date.now()) {
+        return setError("That Movie Night has expired.");
+      }
+      // join directly — no permanent family required. This is exactly the
+      // "someone hands you a Movie Night code and that's your first ever
+      // action on the site" case.
+      const merged = await saveProfile({ currentRoom: code });
+      setActiveRoomCode(code);
+      setRoomMeta(roomData.meta);
+      await checkInstantMatches(code);
+      setRoleInput(merged?.dob && calculateAge(merged.dob) >= 18 ? "parent" : "child");
+      setServicesInput(profile?.services || []);
+      setGenresInput(profile?.genres || []);
+      setFavorites(profile?.favorites || []);
+      setScreen("setup");
+      return;
+    }
+
+    const merged = await saveProfile({ group: code });
+    const data = await loadGroup(code);
     setFamilyMembers((data && data.members) || []);
-    setActiveRoomCode(group);
+    setActiveRoomCode(code);
     setRoomMeta({ type: "family" });
     setRoleInput(merged?.dob && calculateAge(merged.dob) >= 18 ? "parent" : "child");
     setScreen("setup");
@@ -1628,6 +1668,20 @@ export default function Home() {
     } else {
       movies = filteredMovies;
     }
+    if (roomMeta?.type === "movie-night") {
+      // the whole point of a Movie Night is finding something to watch
+      // together right now — a movie someone else already said yes to
+      // jumps to the very front, ahead of personal taste scoring, since a
+      // fast match beats a perfectly-tailored one here
+      const yesFromOthers = [];
+      const rest = [];
+      movies.forEach((m) => {
+        const someoneElseYes = Object.entries(votes[m.id] || {}).some(([memberEmail, choice]) => memberEmail !== email && choice === "yes");
+        if (someoneElseYes) yesFromOthers.push(m);
+        else rest.push(m);
+      });
+      movies = [...yesFromOthers, ...rest];
+    }
     if (skippedOrder.length) {
       const skippedSet = new Set(skippedOrder);
       const rest = movies.filter((m) => !skippedSet.has(m.id));
@@ -1635,7 +1689,7 @@ export default function Home() {
       movies = [...rest, ...pushedToEnd];
     }
     return movies;
-  }, [filteredMovies, committedOrder, ratings, skippedOrder]);
+  }, [filteredMovies, committedOrder, ratings, skippedOrder, roomMeta, votes, email]);
   const currentMovie = deck[0];
   const currentMovieNudges = currentMovie ? nudgeRecommenders(currentMovie.id) : [];
 
@@ -2498,14 +2552,14 @@ export default function Home() {
 
         {screen === "join" && (
           <div className="max-w-sm mx-auto py-8">
-            <p className="text-cinema-muted mb-6 text-sm">Signed in as {displayName}. Create a family group, or join one with a shared code.</p>
-            <label className="text-xs font-bold text-cinema-muted uppercase tracking-wide">Family group code</label>
+            <p className="text-cinema-muted mb-6 text-sm">Signed in as {displayName}. Create a family group, join one with a shared code, or enter a Movie Night code someone sent you.</p>
+            <label className="text-xs font-bold text-cinema-muted uppercase tracking-wide">Family group or Movie Night code</label>
             <div className="flex gap-2 mt-1 mb-2">
-              <input value={groupInput} onChange={(e) => setGroupInput(e.target.value.toUpperCase())} placeholder="e.g. THOMPSONS" className="flex-1 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold" />
+              <input value={groupInput} onChange={(e) => setGroupInput(e.target.value.toUpperCase())} placeholder="e.g. THOMPSONS or MN-A1B2C" className="flex-1 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold" />
               <button onClick={randomCode} className="px-3 py-2 rounded-lg bg-cinema-panel text-cinema-mutedLight text-xs font-bold hover:bg-cinema-border">New</button>
             </div>
-            <p className="text-xs text-cinema-mutedDark mb-5">Share this exact code with whoever you want to match with.</p>
-            <button onClick={handleJoin} className="w-full py-2.5 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight">Join family group</button>
+            <p className="text-xs text-cinema-mutedDark mb-5">Creating a new family group? Use "New" for a random code. Joining someone? Enter the exact code they shared with you.</p>
+            <button onClick={handleJoin} className="w-full py-2.5 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight">Continue</button>
           </div>
         )}
 
