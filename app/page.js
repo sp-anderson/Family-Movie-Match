@@ -2180,10 +2180,16 @@ export default function Home() {
   const { all: visibleSoloAll, some: visibleSoloSome } = splitByGenreMatch(visibleSoloWatch, historyGenreFilter);
 
   const mySeenSearched = myWatched.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase()));
-  const visibleSeen = sortMovies(
-    mySeenSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery) && passesAvailabilityFilter(m, historyAvailabilityFilter)),
-    historySort
-  );
+  const visibleSeen = (() => {
+    const sorted = sortMovies(
+      mySeenSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery) && passesAvailabilityFilter(m, historyAvailabilityFilter)),
+      historySort
+    );
+    if (historySort.key) return sorted; // an explicit sort is chosen — respect it as-is, don't also reorder by rating
+    const unrated = sorted.filter((m) => !ratings[m.id]?.rating);
+    const rated = sorted.filter((m) => ratings[m.id]?.rating);
+    return [...unrated, ...rated];
+  })();
 
   const myYesInVotesSearched = myYes.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase()));
   const visibleYesInVotes = sortMovies(
