@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
-import { Heart, X, Users, Settings, Play, Sparkles, Film, LogOut, RefreshCw, Star, Ticket, Eye, Clock, Compass, Bookmark, RotateCcw, ShoppingCart } from "lucide-react";
+import { Heart, X, Users, Settings, Play, Sparkles, Film, LogOut, RefreshCw, Star, Ticket, Eye, Clock, Compass, RotateCcw, ShoppingCart, Search } from "lucide-react";
 
 const SERVICES = [
   { id: 8, name: "Netflix" },
@@ -562,6 +562,43 @@ export default function Home() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
+  const [showManualSearch, setShowManualSearch] = useState(false);
+  const [manualQuery, setManualQuery] = useState("");
+  const [manualResults, setManualResults] = useState([]);
+  const [manualSearching, setManualSearching] = useState(false);
+  const [manualSelected, setManualSelected] = useState(null);
+  const [manualSaved, setManualSaved] = useState(false);
+
+  async function runManualSearch() {
+    if (!manualQuery.trim()) return;
+    setManualSearching(true);
+    setManualSelected(null);
+    setManualSaved(false);
+    try {
+      const res = await fetch(`/api/search?query=${encodeURIComponent(manualQuery.trim())}`);
+      const data = await res.json();
+      setManualResults(data.results || []);
+    } catch {
+      setManualResults([]);
+    }
+    setManualSearching(false);
+  }
+
+  async function saveManualRating(rating) {
+    if (!manualSelected) return;
+    await castVote(manualSelected.id, "seen");
+    await saveRating(manualSelected, rating);
+    setManualSaved(true);
+  }
+
+  function closeManualSearch() {
+    setShowManualSearch(false);
+    setManualQuery("");
+    setManualResults([]);
+    setManualSelected(null);
+    setManualSaved(false);
+  }
+
   async function requestAccountDeletion() {
     setDeleteBusy(true);
     try {
@@ -743,12 +780,6 @@ export default function Home() {
   const [historyCastQuery, setHistoryCastQuery] = useState("");
   const [historyAvailabilityFilter, setHistoryAvailabilityFilter] = useState([]);
 
-  const [soloSort, setSoloSort] = useState({ key: "", dir: "desc" });
-  const [soloGenreFilter, setSoloGenreFilter] = useState([]);
-  const [soloCastQuery, setSoloCastQuery] = useState("");
-  const [soloAvailabilityFilter, setSoloAvailabilityFilter] = useState([]);
-  const [soloSearch, setSoloSearch] = useState("");
-
   const [error, setError] = useState("");
   useEffect(() => {
     if (!error) return;
@@ -797,7 +828,7 @@ export default function Home() {
   const [favSuggestions, setFavSuggestions] = useState([]);
   const [favSearching, setFavSearching] = useState(false);
   const [historySearch, setHistorySearch] = useState("");
-  const [historyStatusFilter, setHistoryStatusFilter] = useState("all"); // all | yes | no | seen | review-later
+  const [historyStatusFilter, setHistoryStatusFilter] = useState("all"); // all | yes | no | seen | review-later | solo
 
   const cardRef = useRef(null);
   const scoreCacheRef = useRef(new Map()); // movieId -> frozen personalization score, set once and never recomputed
@@ -2084,10 +2115,9 @@ export default function Home() {
     return ids;
   }, [pool, votes, members]);
 
-  const mySoloSearched = myYes.filter((m) => !fullFamilyMatchIds.has(m.id) && m.title.toLowerCase().includes(soloSearch.trim().toLowerCase()));
+  const mySoloSearched = myYes.filter((m) => !fullFamilyMatchIds.has(m.id) && m.title.toLowerCase().includes(historySearch.trim().toLowerCase()));
 
   useCastFetch(readyToWatch, matchesCastQuery);
-  useCastFetch(myYes, soloCastQuery);
 
   const visibleMatches = sortMovies(
     readyToWatch.filter((m) => passesGenreFilter(m, matchesGenreFilter) && passesCastFilter(m, matchesCastQuery) && passesAvailabilityFilter(m, matchesAvailabilityFilter)),
@@ -2096,10 +2126,10 @@ export default function Home() {
   const { all: visibleMatchesAll, some: visibleMatchesSome } = splitByGenreMatch(visibleMatches, matchesGenreFilter);
 
   const visibleSoloWatch = sortMovies(
-    mySoloSearched.filter((m) => passesGenreFilter(m, soloGenreFilter) && passesCastFilter(m, soloCastQuery) && passesAvailabilityFilter(m, soloAvailabilityFilter)),
-    soloSort
+    mySoloSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery) && passesAvailabilityFilter(m, historyAvailabilityFilter)),
+    historySort
   );
-  const { all: visibleSoloAll, some: visibleSoloSome } = splitByGenreMatch(visibleSoloWatch, soloGenreFilter);
+  const { all: visibleSoloAll, some: visibleSoloSome } = splitByGenreMatch(visibleSoloWatch, historyGenreFilter);
 
   const mySeenSearched = myWatched.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase()));
   const visibleSeen = sortMovies(
@@ -2270,6 +2300,116 @@ export default function Home() {
           </div>
         </div>
       )}
+      {status === "authenticated" && profile?.group && screen !== "join" && (
+        <button
+          onClick={() => setShowManualSearch(true)}
+          className="fixed bottom-5 left-5 z-40 flex items-center gap-1.5 px-3 py-2 rounded-full bg-cinema-gold text-cinema-ink font-extrabold text-sm shadow-xl hover:bg-cinema-goldLight"
+          aria-label="Search for a movie to rate"
+        >
+          <Search className="w-4 h-4" /> Search
+        </button>
+      )}
+      {showManualSearch && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60" onClick={closeManualSearch}>
+          <div
+            className="w-full sm:max-w-sm max-h-[80vh] overflow-y-auto bg-cinema-panel border-t sm:border border-cinema-border rounded-t-2xl sm:rounded-2xl p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-extrabold text-cinema-gold">Add or rate a movie</h2>
+              <button onClick={closeManualSearch} className="text-cinema-mutedDark hover:text-stone-50" aria-label="Close">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {!manualSelected && (
+              <>
+                <div className="flex gap-2 mb-3">
+                  <input
+                    value={manualQuery}
+                    onChange={(e) => setManualQuery(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && runManualSearch()}
+                    placeholder="Search by title…"
+                    autoFocus
+                    className="flex-1 px-3 py-2 rounded-lg bg-cinema-bg border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold"
+                  />
+                  <button onClick={runManualSearch} disabled={manualSearching} className="px-4 py-2 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight disabled:opacity-50">
+                    {manualSearching ? "…" : "Go"}
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {manualResults.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => setManualSelected(m)}
+                      className="w-full flex items-center gap-3 p-2 rounded-lg bg-cinema-bg border border-cinema-border hover:border-cinema-gold text-left"
+                    >
+                      {m.poster_path ? (
+                        <img src={`https://image.tmdb.org/t/p/w92${m.poster_path}`} alt={m.title} className="w-10 h-14 object-cover rounded flex-shrink-0" />
+                      ) : (
+                        <div className="w-10 h-14 bg-cinema-border rounded flex-shrink-0" />
+                      )}
+                      <div className="min-w-0">
+                        <div className="font-bold text-sm truncate">{m.title}</div>
+                        {m.year && <div className="text-xs text-cinema-mutedDark">{m.year}</div>}
+                      </div>
+                    </button>
+                  ))}
+                  {!manualSearching && manualQuery && manualResults.length === 0 && (
+                    <p className="text-sm text-cinema-mutedDark text-center py-4">No results for "{manualQuery}"</p>
+                  )}
+                </div>
+              </>
+            )}
+
+            {manualSelected && !manualSaved && (
+              <div>
+                <div className="flex items-center gap-3 mb-4">
+                  {manualSelected.poster_path ? (
+                    <img src={`https://image.tmdb.org/t/p/w92${manualSelected.poster_path}`} alt={manualSelected.title} className="w-14 h-20 object-cover rounded flex-shrink-0" />
+                  ) : (
+                    <div className="w-14 h-20 bg-cinema-border rounded flex-shrink-0" />
+                  )}
+                  <div className="min-w-0">
+                    <div className="font-extrabold truncate">{manualSelected.title}</div>
+                    {manualSelected.year && <div className="text-xs text-cinema-mutedDark">{manualSelected.year}</div>}
+                  </div>
+                </div>
+                <p className="text-xs text-cinema-muted mb-2">How was it?</p>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <button onClick={() => saveManualRating(1)} className="py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-orangeLight text-sm font-bold hover:border-cinema-orange">Not for me</button>
+                  <button onClick={() => saveManualRating(2)} className="py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-mutedLight text-sm font-bold hover:border-cinema-mutedLight">It was okay</button>
+                  <button onClick={() => saveManualRating(3)} className="py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-green text-sm font-bold hover:border-cinema-green">Liked it</button>
+                  <button onClick={() => saveManualRating(4)} className="py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-gold text-sm font-bold hover:border-cinema-gold">Loved it</button>
+                </div>
+                <button onClick={() => setManualSelected(null)} className="text-xs text-cinema-mutedDark font-bold">← Back to search</button>
+              </div>
+            )}
+
+            {manualSaved && (
+              <div className="text-center py-4">
+                <p className="text-cinema-green font-bold mb-3">Saved to your Seen list</p>
+                <div className="flex gap-2 justify-center">
+                  <button
+                    onClick={() => {
+                      setManualSelected(null);
+                      setManualResults([]);
+                      setManualQuery("");
+                      setManualSaved(false);
+                    }}
+                    className="text-xs font-bold px-3 py-1.5 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-mutedLight"
+                  >
+                    Search another
+                  </button>
+                  <button onClick={closeManualSearch} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-cinema-gold text-cinema-ink">
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {celebration && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-6"
@@ -2404,8 +2544,7 @@ export default function Home() {
           {[
             { id: "swipe", label: "Swipe", icon: Heart },
             { id: "matches", label: `Matches (${readyToWatch.length})`, icon: Sparkles },
-            { id: "solo-watch", label: `Solo Watch (${myYes.filter((m) => !fullFamilyMatchIds.has(m.id)).length})`, icon: Bookmark },
-            { id: "history", label: "My Votes", icon: Clock },
+            { id: "history", label: "My Movies", icon: Clock },
             { id: "family-picks", label: "Family Picks", icon: Compass },
             { id: "group", label: "Family", icon: Users },
             { id: "setup", label: "Settings", icon: Settings },
@@ -2919,7 +3058,7 @@ export default function Home() {
           </div>
         )}
 
-        {["matches", "history", "solo-watch"].includes(screen) && <BackToTopButton />}
+        {["matches", "history"].includes(screen) && <BackToTopButton />}
 
         {screen === "matches" && (
           <div className="max-w-lg mx-auto">
@@ -3034,6 +3173,7 @@ export default function Home() {
               {[
                 { key: "all", label: "All" },
                 { key: "yes", label: `Yes (${myYes.length})` },
+                { key: "solo", label: `Solo Watch (${myYes.filter((m) => !fullFamilyMatchIds.has(m.id)).length})` },
                 { key: "no", label: `No (${myNo.length})` },
                 { key: "seen", label: `Seen (${myWatched.length})` },
                 { key: "review-later", label: `Review Later (${reviewLaterMovies.length})` },
@@ -3062,6 +3202,30 @@ export default function Home() {
               setAvailabilityFilter={setHistoryAvailabilityFilter}
               sortOptions={["year", "score", "title"]}
             />
+
+            {historyStatusFilter === "solo" && (
+              <>
+                <h2 className="text-lg font-medium text-cinema-gold uppercase tracking-wide mb-2">
+                  Solo Watch ({visibleSoloWatch.length})
+                </h2>
+                <p className="text-[11px] text-cinema-mutedDark mb-2">You said yes, but at least one other family member hasn't — these are ones to watch on your own.</p>
+                <div className="space-y-3 mb-2">
+                  {visibleSoloWatch.length === 0 && <p className="text-cinema-muted text-sm py-2">Nothing here yet.</p>}
+                  {visibleSoloAll.map(renderSoloCard)}
+                </div>
+                {visibleSoloSome.length > 0 && (
+                  <div className="mb-6">
+                    <h3 className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">
+                      Partial genre matches
+                    </h3>
+                    <p className="text-[11px] text-cinema-mutedDark mb-2">Match some, but not all, of your selected genres.</p>
+                    <div className="space-y-3">
+                      {visibleSoloSome.map(renderSoloCard)}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
 
             {(historyStatusFilter === "all" || historyStatusFilter === "yes") && (
               <>
@@ -3174,50 +3338,6 @@ export default function Home() {
                   ))}
                 </div>
               </>
-            )}
-          </div>
-        )}
-
-        {screen === "solo-watch" && (
-          <div className="max-w-lg mx-auto">
-            <p className="text-xs text-cinema-mutedDark mb-3">You said yes, but at least one other family member hasn't — these are ones to watch on your own.</p>
-
-            <input
-              value={soloSearch}
-              onChange={(e) => setSoloSearch(e.target.value)}
-              placeholder="Search your solo watch list…"
-              className="w-full px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold mb-4"
-            />
-
-            {visibleSoloWatch.length > 0 && (
-              <FilterSortBar
-                sort={soloSort}
-                setSort={setSoloSort}
-                genreFilter={soloGenreFilter}
-                setGenreFilter={setSoloGenreFilter}
-                castQuery={soloCastQuery}
-                setCastQuery={setSoloCastQuery}
-                availabilityFilter={soloAvailabilityFilter}
-                setAvailabilityFilter={setSoloAvailabilityFilter}
-                sortOptions={["year", "score", "title"]}
-              />
-            )}
-
-            <div className="space-y-3">
-              {visibleSoloWatch.length === 0 && <p className="text-cinema-muted text-sm text-center py-6">Nothing here yet.</p>}
-              {visibleSoloAll.map(renderSoloCard)}
-            </div>
-
-            {visibleSoloSome.length > 0 && (
-              <div className="mt-6">
-                <h3 className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">
-                  Partial genre matches
-                </h3>
-                <p className="text-[11px] text-cinema-mutedDark mb-2">Match some, but not all, of your selected genres.</p>
-                <div className="space-y-3">
-                  {visibleSoloSome.map(renderSoloCard)}
-                </div>
-              </div>
             )}
           </div>
         )}
