@@ -14,6 +14,10 @@ export async function GET(request) {
   );
   const data = await res.json();
 
+  if (!res.ok) {
+    return NextResponse.json({ error: data.status_message || "TMDB search failed" }, { status: res.status });
+  }
+
   return NextResponse.json({
     results: (data.results || []).slice(0, 6).map((m) => ({
       id: m.id,

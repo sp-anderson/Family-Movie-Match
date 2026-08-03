@@ -577,9 +577,15 @@ export default function Home() {
     try {
       const res = await fetch(`/api/search?query=${encodeURIComponent(manualQuery.trim())}`);
       const data = await res.json();
-      setManualResults(data.results || []);
-    } catch {
+      if (!res.ok || data.error) {
+        setManualResults([]);
+        setError(data.error ? `Search failed: ${data.error}` : "Search failed. Try again in a moment.");
+      } else {
+        setManualResults(data.results || []);
+      }
+    } catch (e) {
       setManualResults([]);
+      setError("Search failed. Check your connection and try again.");
     }
     setManualSearching(false);
   }
