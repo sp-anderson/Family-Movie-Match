@@ -2357,10 +2357,10 @@ export default function Home() {
       {status === "authenticated" && profile?.group && screen !== "join" && (
         <button
           onClick={() => setShowManualSearch(true)}
-          className="fixed bottom-5 left-5 z-40 flex items-center gap-1.5 px-3 py-2 rounded-full bg-cinema-gold text-cinema-ink font-extrabold text-sm shadow-xl hover:bg-cinema-goldLight"
+          className="fixed bottom-5 left-5 z-40 w-12 h-12 flex items-center justify-center rounded-full bg-cinema-gold text-cinema-ink shadow-xl hover:bg-cinema-goldLight"
           aria-label="Search for a movie to rate"
         >
-          <Search className="w-4 h-4" /> Search
+          <Search className="w-5 h-5" />
         </button>
       )}
       {showManualSearch && (
@@ -2561,7 +2561,7 @@ export default function Home() {
         <div className="flex items-center gap-3">
           {profile?.group && roomMeta && (
             <span className="text-xs text-cinema-muted font-bold hidden sm:inline">
-              {roomMeta.type === "movie-night" ? `🎬 Movie Night ${activeRoomCode}` : `Family ${profile.group}`}
+              {roomMeta.type === "movie-night" ? `Movie Night ${activeRoomCode}` : `Family ${profile.group}`}
             </span>
           )}
           {profile?.group && (
@@ -2569,7 +2569,7 @@ export default function Home() {
               onClick={() => setShowNightPanel((s) => !s)}
               className="text-xs font-bold px-2 py-1 rounded-lg bg-cinema-panel border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold"
             >
-              🎬 Movie Night
+              Movie Night
             </button>
           )}
           <button onClick={() => signOut()} className="text-cinema-muted hover:text-cinema-gold" title="Sign out"><LogOut className="w-4 h-4" /></button>
@@ -2582,7 +2582,7 @@ export default function Home() {
 
           {roomMeta?.type === "movie-night" ? (
             <div>
-              <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-1">🎬 Movie Night code</div>
+              <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-1">Movie Night code</div>
               <div className="mb-3 px-4 py-3 rounded-xl bg-cinema-bg border-2 border-cinema-gold flex items-center justify-between gap-3">
                 <div className="text-3xl font-extrabold text-cinema-gold tracking-[0.15em] flex-1 text-center" style={{ fontFamily: "monospace" }}>
                   {activeRoomCode}
