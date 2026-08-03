@@ -568,24 +568,57 @@ export default function Home() {
   const [manualSearching, setManualSearching] = useState(false);
   const [manualSelected, setManualSelected] = useState(null);
   const [manualSaved, setManualSaved] = useState(false);
+  const [manualSavedLabel, setManualSavedLabel] = useState("");
+  const [manualDidYouMean, setManualDidYouMean] = useState(false);
 
   async function runManualSearch() {
     if (!manualQuery.trim()) return;
     setManualSearching(true);
     setManualSelected(null);
     setManualSaved(false);
-    try {
-      const res = await fetch(`/api/search?query=${encodeURIComponent(manualQuery.trim())}`);
+    setManualDidYouMean(false);
+    const trySearch = async (q) => {
+      const res = await fetch(`/api/search?query=${encodeURIComponent(q)}`);
       const data = await res.json();
-      if (!res.ok || data.error) {
-        setManualResults([]);
-        setError(data.error ? `Search failed: ${data.error}` : "Search failed. Try again in a moment.");
-      } else {
-        setManualResults(data.results || []);
+      if (!res.ok || data.error) throw new Error(data.error || "search failed");
+      return data.results || [];
+    };
+    try {
+      const primary = await trySearch(manualQuery.trim());
+      if (primary.length) {
+        setManualResults(primary);
+        setManualSearching(false);
+        return;
       }
+      // no exact match — try dropping one word at a time, in case a typo
+      // is tripping up TMDB's own matching (e.g. a misspelled word), and
+      // merge whatever comes back as "did you mean" suggestions
+      const words = manualQuery.trim().split(/\s+/);
+      if (words.length > 1) {
+        const variants = words.map((_, i) => words.filter((_, j) => j !== i).join(" "));
+        const byId = new Map();
+        for (const variant of variants) {
+          try {
+            const results = await trySearch(variant);
+            results.forEach((m) => {
+              if (!byId.has(m.id)) byId.set(m.id, m);
+            });
+          } catch {
+            // one variant failing shouldn't block the others
+          }
+          if (byId.size >= 6) break;
+        }
+        if (byId.size > 0) {
+          setManualResults(Array.from(byId.values()).slice(0, 6));
+          setManualDidYouMean(true);
+          setManualSearching(false);
+          return;
+        }
+      }
+      setManualResults([]);
     } catch (e) {
       setManualResults([]);
-      setError("Search failed. Check your connection and try again.");
+      setError(`Search failed: ${e.message || "try again in a moment"}`);
     }
     setManualSearching(false);
   }
@@ -594,6 +627,14 @@ export default function Home() {
     if (!manualSelected) return;
     await castVote(manualSelected.id, "seen");
     await saveRating(manualSelected, rating);
+    setManualSavedLabel("Saved to your Seen list");
+    setManualSaved(true);
+  }
+
+  async function saveManualVote(choice) {
+    if (!manualSelected) return;
+    await castVote(manualSelected.id, choice);
+    setManualSavedLabel(choice === "yes" ? "Added to your Yes list" : "Marked as no");
     setManualSaved(true);
   }
 
@@ -603,6 +644,7 @@ export default function Home() {
     setManualResults([]);
     setManualSelected(null);
     setManualSaved(false);
+    setManualDidYouMean(false);
   }
 
   async function requestAccountDeletion() {
@@ -2343,6 +2385,9 @@ export default function Home() {
                     {manualSearching ? "…" : "Go"}
                   </button>
                 </div>
+                {manualDidYouMean && manualResults.length > 0 && (
+                  <p className="text-[11px] text-cinema-gold font-bold mb-2">No exact match — did you mean one of these?</p>
+                )}
                 <div className="space-y-2">
                   {manualResults.map((m) => (
                     <button
@@ -2381,7 +2426,18 @@ export default function Home() {
                     {manualSelected.year && <div className="text-xs text-cinema-mutedDark">{manualSelected.year}</div>}
                   </div>
                 </div>
-                <p className="text-xs text-cinema-muted mb-2">How was it?</p>
+
+                <p className="text-xs text-cinema-muted mb-2">Want to watch this?</p>
+                <div className="flex gap-2 mb-4">
+                  <button onClick={() => saveManualVote("no")} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-orangeLight text-sm font-bold hover:border-cinema-orange">
+                    <X className="w-4 h-4" /> No
+                  </button>
+                  <button onClick={() => saveManualVote("yes")} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-green text-sm font-bold hover:border-cinema-green">
+                    <Heart className="w-4 h-4" /> Yes
+                  </button>
+                </div>
+
+                <p className="text-xs text-cinema-muted mb-2">Already seen it? How was it?</p>
                 <div className="grid grid-cols-2 gap-2 mb-3">
                   <button onClick={() => saveManualRating(1)} className="py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-orangeLight text-sm font-bold hover:border-cinema-orange">Not for me</button>
                   <button onClick={() => saveManualRating(2)} className="py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-mutedLight text-sm font-bold hover:border-cinema-mutedLight">It was okay</button>
@@ -2394,7 +2450,7 @@ export default function Home() {
 
             {manualSaved && (
               <div className="text-center py-4">
-                <p className="text-cinema-green font-bold mb-3">Saved to your Seen list</p>
+                <p className="text-cinema-green font-bold mb-3">{manualSavedLabel}</p>
                 <div className="flex gap-2 justify-center">
                   <button
                     onClick={() => {
@@ -2413,6 +2469,42 @@ export default function Home() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {ratingPromptMovie && screen !== "swipe" && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 bg-cinema-panel border-t-2 border-cinema-gold px-5 py-4 shadow-2xl">
+          <div className="max-w-sm mx-auto">
+            <div className="flex items-start gap-3 mb-3">
+              {ratingPromptMovie.poster_path && (
+                <img
+                  src={`https://image.tmdb.org/t/p/w92${ratingPromptMovie.poster_path}`}
+                  alt={ratingPromptMovie.title}
+                  className="w-12 h-18 object-cover rounded flex-shrink-0"
+                />
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-bold text-cinema-mutedLight uppercase tracking-wide">How was it?</div>
+                <div className="font-extrabold text-stone-50 truncate">{ratingPromptMovie.title}</div>
+              </div>
+              <button onClick={() => setRatingPromptMovie(null)} className="text-cinema-mutedDark hover:text-stone-50 flex-shrink-0" aria-label="Dismiss">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              <button onClick={() => saveRating(ratingPromptMovie, 1)} className="py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-orangeLight text-xs font-bold hover:border-cinema-orange">
+                Not for me
+              </button>
+              <button onClick={() => saveRating(ratingPromptMovie, 2)} className="py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-mutedLight text-xs font-bold hover:border-cinema-mutedLight">
+                It was okay
+              </button>
+              <button onClick={() => saveRating(ratingPromptMovie, 3)} className="py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-green text-xs font-bold hover:border-cinema-green">
+                Liked it
+              </button>
+              <button onClick={() => saveRating(ratingPromptMovie, 4)} className="py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-gold text-xs font-bold hover:border-cinema-gold">
+                Loved it
+              </button>
+            </div>
           </div>
         </div>
       )}
