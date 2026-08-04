@@ -422,6 +422,7 @@ export default function Home() {
   const [pool, setPool] = useState(null);
   const [votes, setVotes] = useState({});
   const [ratings, setRatings] = useState({}); // { movieId: { rating: 1-4, ratedAt } } — this user's own ratings
+  const [dwellTimes, setDwellTimes] = useState({}); // { movieId: ms } — how long the card sat in front before a swipe decision
   const [ratingPromptMovie, setRatingPromptMovie] = useState(null); // movie object, shown as a light nudge after marking "seen"
   const [lastAction, setLastAction] = useState(null); // { movieId, previousChoice } — single-level undo for the last vote cast
   const [migrationItems, setMigrationItems] = useState([]); // [{ originalTitle, candidate, rating, skipped }]
@@ -941,6 +942,10 @@ export default function Home() {
         .then((r) => r.json())
         .then((d) => setRatings(d.ratings || {}))
         .catch(() => setRatings({}));
+      fetch(`/api/dwelltimes?email=${encodeURIComponent(email)}`)
+        .then((r) => r.json())
+        .then((d) => setDwellTimes(d.dwellTimes || {}))
+        .catch(() => setDwellTimes({}));
       setWantsTheatersInput(data.profile.wantsTheaters || false);
       setServicesInput(data.profile.services || []);
       setGenresInput(data.profile.genres || []);
@@ -1721,11 +1726,15 @@ export default function Home() {
   function computeTasteProfile() {
     const genre = {}, cast = {}, director = {}, writer = {}, keyword = {};
     const now = Date.now();
-    Object.values(ratings).forEach(({ rating, ratedAt, genreIds, castIds, directorIds, writerIds, keywordIds }) => {
+    Object.values(ratings).forEach(({ rating, ratedAt, genreIds, castIds, directorIds, writerIds, keywordIds, rewatchCount }) => {
       if (!RATING_WEIGHTS[rating]) return;
       const daysAgo = (now - (ratedAt || now)) / (1000 * 60 * 60 * 24);
       const decay = Math.pow(0.5, daysAgo / AFFINITY_HALF_LIFE_DAYS);
-      const weight = RATING_WEIGHTS[rating] * decay;
+      // a genuine rewatch (not a same-day correction) is a strong implicit
+      // signal on top of the rating itself — someone who watched something
+      // again clearly meant it, so weight it up, capped so it can't run away
+      const rewatchMult = 1 + Math.min((rewatchCount || 0) * 0.25, 1);
+      const weight = RATING_WEIGHTS[rating] * decay * rewatchMult;
       (genreIds || []).forEach((g) => { genre[g] = (genre[g] || 0) + weight; });
       (castIds || []).forEach((c) => { cast[c] = (cast[c] || 0) + weight; });
       (directorIds || []).forEach((d) => { director[d] = (director[d] || 0) + weight; });
@@ -1735,19 +1744,30 @@ export default function Home() {
     if (pool) {
       pool.movies.forEach((m) => {
         if ((votes[m.id] || {})[email] === "no") {
-          (m.genre_ids || []).forEach((g) => { genre[g] = (genre[g] || 0) + NO_VOTE_WEIGHT; });
+          // dwell time as a confidence signal: a near-instant swipe is more
+          // reflexive (poster/title alone), a longer look before deciding
+          // reflects genuine engagement with the content — so it counts for
+          // more either way. Baseline ~3s glance, clamped so an outlier
+          // (phone left open, etc.) can't distort things too far.
+          const dwellSeconds = (dwellTimes[m.id] || 3000) / 1000;
+          const dwellMult = Math.max(0.5, Math.min(1.5, dwellSeconds / 3));
+          const weight = NO_VOTE_WEIGHT * dwellMult;
+          (m.genre_ids || []).forEach((g) => { genre[g] = (genre[g] || 0) + weight; });
           const credits = detailsCache[m.id];
           if (credits) {
-            (credits.castIds || []).forEach((c) => { cast[c] = (cast[c] || 0) + NO_VOTE_WEIGHT; });
-            (credits.directorIds || []).forEach((d) => { director[d] = (director[d] || 0) + NO_VOTE_WEIGHT; });
-            (credits.writerIds || []).forEach((w) => { writer[w] = (writer[w] || 0) + NO_VOTE_WEIGHT; });
-            (credits.keywordIds || []).forEach((k) => { keyword[k] = (keyword[k] || 0) + NO_VOTE_WEIGHT; });
+            (credits.castIds || []).forEach((c) => { cast[c] = (cast[c] || 0) + weight; });
+            (credits.directorIds || []).forEach((d) => { director[d] = (director[d] || 0) + weight; });
+            (credits.writerIds || []).forEach((w) => { writer[w] = (writer[w] || 0) + weight; });
+            (credits.keywordIds || []).forEach((k) => { keyword[k] = (keyword[k] || 0) + weight; });
           }
         }
       });
     }
     return { genre, cast, director, writer, keyword };
   }
+
+  const KEYWORD_STRONG_DISLIKE_THRESHOLD = -1.0; // roughly 2-3 "not for me" ratings sharing a keyword
+  const KEYWORD_DAMPEN_FACTOR = 0.3; // once that threshold is hit, the whole score gets cut way down — not just the keyword term
 
   function scoreMovieByProfile(movie, profile) {
     let score = (movie.genre_ids || []).reduce((sum, g) => sum + (profile.genre[g] || 0), 0);
@@ -1760,7 +1780,16 @@ export default function Home() {
       score += (credits.castIds || []).reduce((sum, c) => sum + (profile.cast[c] || 0), 0) * CAST_WEIGHT_MULT;
       score += (credits.directorIds || []).reduce((sum, d) => sum + (profile.director[d] || 0), 0) * DIRECTOR_WEIGHT_MULT;
       score += (credits.writerIds || []).reduce((sum, w) => sum + (profile.writer[w] || 0), 0) * WRITER_WEIGHT_MULT;
-      score += (credits.keywordIds || []).reduce((sum, k) => sum + (profile.keyword[k] || 0), 0) * KEYWORD_WEIGHT_MULT;
+      const keywordRaw = (credits.keywordIds || []).reduce((sum, k) => sum + (profile.keyword[k] || 0), 0);
+      score += keywordRaw * KEYWORD_WEIGHT_MULT;
+      // this is the "I like action generally, but not superhero
+      // specifically" case: a purely additive score lets a broad genre
+      // preference swamp a narrower, strongly-held dislike. Once someone's
+      // shown a clear repeated pattern against a specific keyword, let it
+      // suppress the whole ranking instead of just being outvoted by genre.
+      if (keywordRaw < KEYWORD_STRONG_DISLIKE_THRESHOLD) {
+        score *= KEYWORD_DAMPEN_FACTOR;
+      }
     }
     return score;
   }
@@ -1908,6 +1937,11 @@ export default function Home() {
   const currentMovie = deck[0];
   const currentMovieNudges = currentMovie ? nudgeRecommenders(currentMovie.id) : [];
 
+  const cardShownAtRef = useRef(Date.now());
+  useEffect(() => {
+    cardShownAtRef.current = Date.now();
+  }, [currentMovie?.id]);
+
   const ratingCheckPending = myMaxRating && pool ? pool.movies.some((m) => certifications[m.id] === undefined) : false;
 
   function passesRatingFilter(movie) {
@@ -2005,7 +2039,7 @@ export default function Home() {
     // eslint-disable-next-line
   }, [deck.length ? deck[0]?.id : null]);
 
-  async function castVote(movieId, choice) {
+  async function castVote(movieId, choice, dwellMs) {
     const previousChoice = (votes[movieId] || {})[email] || null;
     setLastAction({ movieId, previousChoice });
     // optimistic: update locally right away so the next card appears
@@ -2019,6 +2053,18 @@ export default function Home() {
       });
     } catch {
       // the optimistic update already stuck locally; a later refresh will reconcile
+    }
+    if (typeof dwellMs === "number") {
+      setDwellTimes((prev) => ({ ...prev, [movieId]: dwellMs }));
+      try {
+        await fetch("/api/dwelltimes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, movieId, dwellMs }),
+        });
+      } catch {
+        // dwell time is a nice-to-have signal — don't block on it failing
+      }
     }
   }
 
@@ -2084,6 +2130,7 @@ export default function Home() {
   function commitSwipe(choice) {
     if (!currentMovie || animating) return;
     const movie = currentMovie;
+    const dwellMs = Date.now() - cardShownAtRef.current;
     if (nudgeRecommenders(movie.id).length > 0) {
       dismissNudge(movie.id);
     }
@@ -2095,7 +2142,7 @@ export default function Home() {
     setAnimating(true);
     setDragX(choice === "yes" ? 500 : -500);
     setTimeout(() => {
-      castVote(movie.id, choice);
+      castVote(movie.id, choice, dwellMs);
       setDragX(0);
       setAnimating(false);
     }, 200);
@@ -2103,10 +2150,11 @@ export default function Home() {
 
   function markSeen() {
     if (!currentMovie || animating) return;
+    const dwellMs = Date.now() - cardShownAtRef.current;
     if (nudgeRecommenders(currentMovie.id).length > 0) {
       dismissNudge(currentMovie.id);
     }
-    castVoteWithPrompt(currentMovie, "seen");
+    castVoteWithPrompt(currentMovie, "seen", dwellMs);
   }
 
   async function saveRating(movie, rating) {
@@ -2147,8 +2195,8 @@ export default function Home() {
     setRatingPromptMovie(null);
   }
 
-  function castVoteWithPrompt(movie, choice) {
-    castVote(movie.id, choice);
+  function castVoteWithPrompt(movie, choice, dwellMs) {
+    castVote(movie.id, choice, dwellMs);
     if (choice === "seen") setRatingPromptMovie(movie);
   }
 

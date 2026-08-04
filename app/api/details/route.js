@@ -13,9 +13,14 @@ export async function GET(request) {
   // for every user and every family — cache it once, shared, forever, so
   // repeated lookups across the whole app never hit TMDB again for a
   // movie someone's already fetched credits for
+  // bump this whenever the shape of what we fetch/cache changes, so old
+  // entries written before a field existed (e.g. keywords) get refreshed
+  // instead of silently staying incomplete forever
+  const CACHE_SCHEMA_VERSION = 2;
+
   const cacheKey = `movie:${movieId}:credits`;
   const cached = await kv.get(cacheKey);
-  if (cached) {
+  if (cached && cached._v === CACHE_SCHEMA_VERSION) {
     console.log(`[details] cache HIT for movie ${movieId}`);
     return NextResponse.json(cached);
   }
@@ -38,6 +43,7 @@ export async function GET(request) {
   const keywords = data.keywords?.keywords || []; // TMDB nests it as { keywords: { keywords: [...] } } for movies
 
   const result = {
+    _v: CACHE_SCHEMA_VERSION,
     runtime: data.runtime || null,
     cast: castList.map((c) => c.name),
     castIds: castList.map((c) => c.id),

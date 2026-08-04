@@ -11,6 +11,8 @@ export async function GET(request) {
 }
 
 // POST /api/ratings  body: { email, movieId, rating, genreIds, castIds, directorIds, writerIds, keywordIds }
+const REWATCH_MIN_GAP_MS = 24 * 60 * 60 * 1000; // re-rating within a day = correction, not a rewatch
+
 export async function POST(request) {
   const body = await request.json();
   const { email, movieId, rating, genreIds, castIds, directorIds, writerIds, keywordIds } = body;
@@ -19,14 +21,17 @@ export async function POST(request) {
   }
   const ratings = (await kv.get(`user:${email}:ratings`)) || {};
   const existing = ratings[movieId] || {};
+  const now = Date.now();
+  const isGenuineRewatch = existing.ratedAt && now - existing.ratedAt > REWATCH_MIN_GAP_MS;
   ratings[movieId] = {
     rating,
-    ratedAt: Date.now(),
+    ratedAt: now,
     genreIds: genreIds || existing.genreIds || [],
     castIds: castIds || existing.castIds || [],
     directorIds: directorIds || existing.directorIds || [],
     writerIds: writerIds || existing.writerIds || [],
     keywordIds: keywordIds || existing.keywordIds || [],
+    rewatchCount: isGenuineRewatch ? (existing.rewatchCount || 0) + 1 : existing.rewatchCount || 0,
   };
   await kv.set(`user:${email}:ratings`, ratings);
   return NextResponse.json({ ratings });
