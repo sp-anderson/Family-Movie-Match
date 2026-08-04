@@ -953,7 +953,7 @@ export default function Home() {
 
       setProfile(data.profile);
 
-      if (data.profile.isMinor && !data.profile.parentEmail) {
+      if (data.profile.isMinor && !data.profile.isLocalProfile && !data.profile.parentEmail) {
         setScreen("parent-consent");
         setLoadingProfile(false);
         return;
@@ -4123,7 +4123,7 @@ export default function Home() {
               <div>
                 <div className="text-sm font-extrabold text-cinema-gold mb-1">Movie Night</div>
                 <div className="text-xs text-cinema-gold/80">
-                  Match with anyone right now — friends, extended family, people who've never used the app before. Share a code, everyone swipes, get an instant match. No permanent family required.
+                  Send a code to anyone you want to watch with. They don't need a family set up first. Swipe together and see what you all agree on.
                 </div>
               </div>
             </button>
