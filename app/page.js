@@ -563,6 +563,11 @@ export default function Home() {
   const [deleteBusy, setDeleteBusy] = useState(false);
 
   const [showManualSearch, setShowManualSearch] = useState(false);
+  const [editingNicknameFor, setEditingNicknameFor] = useState(null);
+  const [nicknameInput, setNicknameInput] = useState("");
+  const [showJoinAnother, setShowJoinAnother] = useState(false);
+  const [memberActionConfirm, setMemberActionConfirm] = useState(null); // { email, name, action: "remove" | "block" }
+
   const [manualQuery, setManualQuery] = useState("");
   const [manualResults, setManualResults] = useState([]);
   const [manualSearching, setManualSearching] = useState(false);
@@ -1175,6 +1180,30 @@ export default function Home() {
     await saveMember(profile.group, { ...member, role });
   }
 
+  async function removeMemberFromFamily(email) {
+    const res = await fetch("/api/group", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: activeRoomCode, type: "removeMember", payload: { email } }),
+    });
+    const data = await res.json();
+    setMembers(data.members || []);
+    setFamilyMembers(data.members || []);
+    setMemberActionConfirm(null);
+  }
+
+  async function blockMemberFromFamily(email) {
+    const res = await fetch("/api/group", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: activeRoomCode, type: "blockMember", payload: { email } }),
+    });
+    const data = await res.json();
+    setMembers(data.members || []);
+    setFamilyMembers(data.members || []);
+    setMemberActionConfirm(null);
+  }
+
   const [pendingConsent, setPendingConsent] = useState({}); // email -> record (only pending ones)
   const [approvingEmail, setApprovingEmail] = useState(null);
   const [approvingRating, setApprovingRating] = useState("PG");
@@ -1269,13 +1298,40 @@ export default function Home() {
       return;
     }
 
-    const merged = await saveProfile({ group: code });
+    // check whether this family has blocked you before letting the join happen
+    const existingGroupData = await fetch(`/api/group?code=${encodeURIComponent(code)}`).then((r) => r.json()).catch(() => null);
+    if (existingGroupData?.blocked?.includes(email)) {
+      return setError("You've been blocked from this family.");
+    }
+
+    const currentGroups = profile?.groups?.length ? profile.groups : profile?.group ? [{ code: profile.group, nickname: profile.group }] : [];
+    const alreadyIn = currentGroups.some((g) => g.code === code);
+    const nextGroups = alreadyIn ? currentGroups : [...currentGroups, { code, nickname: code }];
+
+    const merged = await saveProfile({ group: code, groups: nextGroups });
     const data = await loadGroup(code);
     setFamilyMembers((data && data.members) || []);
     setActiveRoomCode(code);
     setRoomMeta({ type: "family" });
     setRoleInput(merged?.dob && calculateAge(merged.dob) >= 18 ? "parent" : "child");
     setScreen("setup");
+  }
+
+  async function switchFamily(code) {
+    const merged = await saveProfile({ group: code });
+    setProfile(merged);
+    const data = await loadGroup(code);
+    setFamilyMembers((data && data.members) || []);
+    setActiveRoomCode(code);
+    setRoomMeta({ type: "family" });
+    setRoleInput(merged?.dob && calculateAge(merged.dob) >= 18 ? "parent" : "child");
+    setScreen("setup");
+  }
+
+  async function updateFamilyNickname(code, nickname) {
+    const nextGroups = (profile?.groups || []).map((g) => (g.code === code ? { ...g, nickname } : g));
+    const merged = await saveProfile({ groups: nextGroups });
+    setProfile(merged);
   }
 
   function randomCode() {
@@ -2514,6 +2570,35 @@ export default function Home() {
           </div>
         </div>
       )}
+      {memberActionConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6" onClick={() => setMemberActionConfirm(null)}>
+          <div className="bg-cinema-panel border border-cinema-border rounded-2xl p-5 max-w-xs w-full" onClick={(e) => e.stopPropagation()}>
+            <p className="font-extrabold text-stone-50 mb-2">
+              {memberActionConfirm.action === "block" ? `Block ${memberActionConfirm.name}?` : `Remove ${memberActionConfirm.name}?`}
+            </p>
+            <p className="text-sm text-cinema-muted mb-4">
+              {memberActionConfirm.action === "block"
+                ? "They'll be removed from this family and won't be able to rejoin with the code. Their account and everything else about it stays completely intact."
+                : "They'll be removed from this family, but can rejoin with the code later. Their account and everything else about it stays completely intact."}
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() =>
+                  memberActionConfirm.action === "block"
+                    ? blockMemberFromFamily(memberActionConfirm.email)
+                    : removeMemberFromFamily(memberActionConfirm.email)
+                }
+                className="flex-1 py-2 rounded-lg bg-cinema-orange text-cinema-ink font-extrabold hover:bg-cinema-orangeLight"
+              >
+                {memberActionConfirm.action === "block" ? "Block" : "Remove"}
+              </button>
+              <button onClick={() => setMemberActionConfirm(null)} className="flex-1 py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-mutedLight font-bold">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {celebration && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-6"
@@ -2561,7 +2646,9 @@ export default function Home() {
         <div className="flex items-center gap-3">
           {profile?.group && roomMeta && (
             <span className="text-xs text-cinema-muted font-bold hidden sm:inline">
-              {roomMeta.type === "movie-night" ? `Movie Night ${activeRoomCode}` : `Family ${profile.group}`}
+              {roomMeta.type === "movie-night"
+                ? `Movie Night ${activeRoomCode}`
+                : `Family ${(profile?.groups || []).find((g) => g.code === profile.group)?.nickname || profile.group}`}
             </span>
           )}
           {profile?.group && (
@@ -3525,7 +3612,72 @@ export default function Home() {
 
         {screen === "group" && (
           <div className="max-w-lg mx-auto space-y-3">
+            {(profile?.groups?.length ? profile.groups : profile?.group ? [{ code: profile.group, nickname: profile.group }] : []).length > 1 && (
+              <div className="mb-4">
+                <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Your families</div>
+                <div className="space-y-2">
+                  {(profile?.groups?.length ? profile.groups : [{ code: profile.group, nickname: profile.group }]).map((g) => (
+                    <div key={g.code} className={"flex items-center gap-2 p-2 rounded-lg border " + (g.code === activeRoomCode ? "border-cinema-gold bg-cinema-gold/10" : "border-cinema-border bg-cinema-panel")}>
+                      {editingNicknameFor === g.code ? (
+                        <input
+                          autoFocus
+                          value={nicknameInput}
+                          onChange={(e) => setNicknameInput(e.target.value)}
+                          onBlur={() => {
+                            updateFamilyNickname(g.code, nicknameInput.trim() || g.code);
+                            setEditingNicknameFor(null);
+                          }}
+                          onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+                          className="flex-1 px-2 py-1 rounded bg-cinema-bg border border-cinema-border text-stone-50 text-sm outline-none focus:border-cinema-gold"
+                        />
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setEditingNicknameFor(g.code);
+                            setNicknameInput(g.nickname || g.code);
+                          }}
+                          className="flex-1 text-left text-sm font-bold hover:text-cinema-gold"
+                        >
+                          {g.nickname || g.code} <span className="text-cinema-mutedDark font-normal">({g.code})</span>
+                        </button>
+                      )}
+                      {g.code !== activeRoomCode && (
+                        <button onClick={() => switchFamily(g.code)} className="text-xs font-bold px-2 py-1 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold">
+                          Switch
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <p className="text-xs text-cinema-mutedDark mb-2">Share code <span className="text-cinema-gold font-bold">{activeRoomCode}</span> with anyone else who should join.</p>
+
+            {!showJoinAnother ? (
+              <button onClick={() => setShowJoinAnother(true)} className="text-xs font-bold text-cinema-gold hover:underline mb-2">
+                + Join another family
+              </button>
+            ) : (
+              <div className="flex gap-2 mb-2">
+                <input
+                  value={groupInput}
+                  onChange={(e) => setGroupInput(e.target.value.toUpperCase())}
+                  placeholder="Enter their code"
+                  className="flex-1 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 text-sm outline-none focus:border-cinema-gold"
+                />
+                <button
+                  onClick={async () => {
+                    await handleJoin();
+                    setShowJoinAnother(false);
+                    setGroupInput("");
+                  }}
+                  className="px-3 py-2 rounded-lg bg-cinema-gold text-cinema-ink text-sm font-bold hover:bg-cinema-goldLight"
+                >
+                  Join
+                </button>
+              </div>
+            )}
+
             {members.map((m) => (
               <div key={m.email} className="bg-cinema-panel rounded-xl p-3 border border-cinema-border">
                 <div className="flex items-center gap-2 mb-2">
@@ -3541,7 +3693,7 @@ export default function Home() {
                 <div className="flex flex-wrap gap-1 mb-1">{(m.genres || []).map((gid) => <span key={gid} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-gold/20 text-cinema-gold font-bold">{GENRES.find((g) => g.id === gid)?.name}</span>)}</div>
                 {m.favorites?.length > 0 && <div className="text-xs text-cinema-muted mt-1">Favorites: {m.favorites.join(", ")}</div>}
                 {myMember?.role === "parent" && m.email !== email && (
-                  <div className="mt-2 pt-2 border-t border-cinema-border flex items-center gap-2">
+                  <div className="mt-2 pt-2 border-t border-cinema-border flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-bold text-cinema-muted">Role:</span>
                     <select
                       value={m.role || "child"}
@@ -3551,6 +3703,18 @@ export default function Home() {
                       <option value="child">Child</option>
                       <option value="parent">Parent</option>
                     </select>
+                    <button
+                      onClick={() => setMemberActionConfirm({ email: m.email, name: m.name, action: "remove" })}
+                      className="text-xs font-bold px-2 py-1 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-mutedLight hover:border-cinema-orange hover:text-cinema-orangeLight"
+                    >
+                      Remove
+                    </button>
+                    <button
+                      onClick={() => setMemberActionConfirm({ email: m.email, name: m.name, action: "block" })}
+                      className="text-xs font-bold px-2 py-1 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-mutedLight hover:border-cinema-orange hover:text-cinema-orangeLight"
+                    >
+                      Block
+                    </button>
                   </div>
                 )}
                 {m.role === "child" && (

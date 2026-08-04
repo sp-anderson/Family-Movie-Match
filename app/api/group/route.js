@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { redis as kv } from "../../../lib/redis";
 
-// GET /api/group?code=THOMPSONS  -> { members: [], pool: null, spotlight: [], certifications: {}, skipped: {}, nudgeDismissed: {} }
+// GET /api/group?code=THOMPSONS  -> { members: [], pool: null, spotlight: [], certifications: {}, skipped: {}, nudgeDismissed: {}, blocked: [] }
 // Note: votes are NOT stored per-room anymore — they belong to the user
 // (see /api/uservotes). The client assembles a room's votes by fetching
 // each member's own vote history and cross-referencing.
@@ -10,13 +10,14 @@ export async function GET(request) {
   const code = (searchParams.get("code") || "").toUpperCase();
   if (!code) return NextResponse.json({ error: "code required" }, { status: 400 });
 
-  const [members, pool, spotlight, certifications, skipped, nudgeDismissed] = await Promise.all([
+  const [members, pool, spotlight, certifications, skipped, nudgeDismissed, blocked] = await Promise.all([
     kv.get(`group:${code}:members`),
     kv.get(`group:${code}:pool`),
     kv.get(`group:${code}:spotlight`),
     kv.get(`group:${code}:certifications`),
     kv.get(`group:${code}:skipped`),
     kv.get(`group:${code}:nudgeDismissed`),
+    kv.get(`group:${code}:blocked`),
   ]);
 
   return NextResponse.json({
@@ -26,6 +27,7 @@ export async function GET(request) {
     certifications: certifications || {},
     skipped: skipped || {},
     nudgeDismissed: nudgeDismissed || {},
+    blocked: blocked || [],
   });
 }
 
@@ -97,6 +99,37 @@ export async function POST(request) {
     }
     await kv.set(`group:${code}:nudgeDismissed`, nudgeDismissed);
     return NextResponse.json({ nudgeDismissed });
+  }
+
+  if (body.type === "removeMember") {
+    // payload: { email }  — removes them from THIS family's member list only.
+    // Their account, profile, votes, ratings — everything else — is
+    // completely untouched. They can rejoin with the code unless blocked.
+    const members = (await kv.get(`group:${code}:members`)) || [];
+    const next = members.filter((m) => m.email !== body.payload.email);
+    await kv.set(`group:${code}:members`, next);
+    return NextResponse.json({ members: next });
+  }
+
+  if (body.type === "blockMember") {
+    // payload: { email }  — removes them AND prevents rejoining with the code
+    const members = (await kv.get(`group:${code}:members`)) || [];
+    const nextMembers = members.filter((m) => m.email !== body.payload.email);
+    await kv.set(`group:${code}:members`, nextMembers);
+
+    const blocked = (await kv.get(`group:${code}:blocked`)) || [];
+    if (!blocked.includes(body.payload.email)) blocked.push(body.payload.email);
+    await kv.set(`group:${code}:blocked`, blocked);
+    return NextResponse.json({ members: nextMembers, blocked });
+  }
+
+  if (body.type === "unblockMember") {
+    // payload: { email }  — lets a parent undo a block; doesn't re-add them
+    // as a member, just clears the way for them to rejoin with the code again
+    const blocked = (await kv.get(`group:${code}:blocked`)) || [];
+    const next = blocked.filter((e) => e !== body.payload.email);
+    await kv.set(`group:${code}:blocked`, next);
+    return NextResponse.json({ blocked: next });
   }
 
   return NextResponse.json({ error: "unknown type" }, { status: 400 });
