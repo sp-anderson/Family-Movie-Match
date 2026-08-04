@@ -911,8 +911,30 @@ export default function Home() {
   const [dragX, setDragX] = useState(0);
   const [animating, setAnimating] = useState(false);
 
-  const email = session?.user?.email;
-  const displayName = session?.user?.name || email;
+  const realEmail = session?.user?.email; // the actual authenticated account — always used for things that must stay tied to the real signed-in person
+  const [activeProfileId, setActiveProfileId] = useState(null); // set when a local (no-login) profile is active
+  const [activeProfileName, setActiveProfileName] = useState(null);
+  const [myManagedLocalProfiles, setMyManagedLocalProfiles] = useState([]); // loaded from the REAL account, independent of whichever profile is currently active — this is what makes local profiles findable across devices
+  const [showProfileSwitcher, setShowProfileSwitcher] = useState(false);
+  const [showCreateLocalProfile, setShowCreateLocalProfile] = useState(false);
+  const [newLocalProfileName, setNewLocalProfileName] = useState("");
+  const [newLocalProfileDobMonth, setNewLocalProfileDobMonth] = useState("");
+  const [newLocalProfileDobDay, setNewLocalProfileDobDay] = useState("");
+  const [newLocalProfileDobYear, setNewLocalProfileDobYear] = useState("");
+  const [newLocalProfileMaxRating, setNewLocalProfileMaxRating] = useState("G");
+  const [newLocalProfileError, setNewLocalProfileError] = useState("");
+  const [newLocalProfileBusy, setNewLocalProfileBusy] = useState(false);
+  const email = activeProfileId || realEmail; // the "effective" identity — every existing use of `email` below automatically respects whichever profile is active
+  const displayName = activeProfileId ? activeProfileName : session?.user?.name || realEmail;
+
+  useEffect(() => {
+    if (!realEmail) return;
+    fetch(`/api/profile?email=${encodeURIComponent(realEmail)}`)
+      .then((r) => r.json())
+      .then((d) => setMyManagedLocalProfiles(d.profile?.managedLocalProfiles || []))
+      .catch(() => setMyManagedLocalProfiles([]));
+  }, [realEmail]);
+
 
   useEffect(() => {
     if (status !== "authenticated" || !email) return;
@@ -1275,6 +1297,91 @@ export default function Home() {
     } catch {
       // if this fails they can just try again — nothing destructive happened
     }
+  }
+
+  async function createLocalProfile(name, dob, initialMaxRating) {
+    const id = "local_" + Math.random().toString(36).slice(2, 10);
+    const age = calculateAge(dob);
+    const isMinorProfile = age < 13;
+    const role = age >= 18 ? "parent" : "child";
+    const currentGroups = profile?.groups?.length ? profile.groups : profile?.group ? [{ code: profile.group, nickname: profile.group }] : [];
+    const myFamilyEntry = currentGroups.find((g) => g.code === profile.group);
+
+    const newProfile = {
+      dob,
+      name,
+      isMinor: isMinorProfile,
+      // this is direct, in-person parental consent — the creating parent is
+      // already authenticated and already a parent in this family, so the
+      // usual email-based consent loop (built for a child signing up on
+      // their own) would just be a redundant email-to-self round trip here
+      consentStatus: isMinorProfile ? "approved" : null,
+      approvedRating: isMinorProfile ? initialMaxRating || "G" : null,
+      isLocalProfile: true,
+      createdBy: realEmail,
+      group: profile.group,
+      groups: [myFamilyEntry || { code: profile.group, nickname: profile.group }],
+      services: profile?.services || [],
+      genres: [],
+      favorites: [],
+      region: profile?.region || "CA",
+    };
+    await fetch("/api/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: id, profile: newProfile }),
+    });
+
+    await saveMember(profile.group, {
+      email: id,
+      name,
+      role,
+      maxRating: isMinorProfile ? initialMaxRating || "G" : null,
+      isLocalProfile: true,
+    });
+
+    // register on the CREATING parent's own account so this profile is
+    // discoverable from any device that parent signs into — this is what
+    // makes it work across devices, not just the one it was created on.
+    // Stored with the name included so the switcher never needs a separate
+    // lookup per profile just to show who's who.
+    const myLocalProfiles = profile?.managedLocalProfiles || [];
+    await saveProfile({ managedLocalProfiles: [...myLocalProfiles, { id, name }] });
+
+    setMyManagedLocalProfiles((prev) => [...prev, { id, name }]);
+    return { id, name };
+  }
+
+  function switchToProfile(id, name) {
+    setActiveProfileId(id);
+    setActiveProfileName(name);
+  }
+
+  function switchToOwnAccount() {
+    setActiveProfileId(null);
+    setActiveProfileName(null);
+  }
+
+  async function submitCreateLocalProfile() {
+    setNewLocalProfileError("");
+    if (!newLocalProfileName.trim()) return setNewLocalProfileError("Enter a name.");
+    if (!newLocalProfileDobMonth || !newLocalProfileDobDay || !newLocalProfileDobYear) return setNewLocalProfileError("Enter a full date of birth.");
+    const dob = `${newLocalProfileDobYear}-${String(newLocalProfileDobMonth).padStart(2, "0")}-${String(newLocalProfileDobDay).padStart(2, "0")}`;
+    if (calculateAge(dob) === null || calculateAge(dob) < 0) return setNewLocalProfileError("That date doesn't look right.");
+    setNewLocalProfileBusy(true);
+    try {
+      const { id, name } = await createLocalProfile(newLocalProfileName.trim(), dob, newLocalProfileMaxRating);
+      setShowCreateLocalProfile(false);
+      setNewLocalProfileName("");
+      setNewLocalProfileDobMonth("");
+      setNewLocalProfileDobDay("");
+      setNewLocalProfileDobYear("");
+      switchToProfile(id, name);
+      setShowProfileSwitcher(false);
+    } catch {
+      setNewLocalProfileError("Couldn't create the profile. Try again.");
+    }
+    setNewLocalProfileBusy(false);
   }
 
   async function saveMember(group, memberObj) {
@@ -2709,6 +2816,121 @@ export default function Home() {
           </div>
         </div>
       )}
+      {showProfileSwitcher && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60" onClick={() => { setShowProfileSwitcher(false); setShowCreateLocalProfile(false); }}>
+          <div
+            className="w-full sm:max-w-sm max-h-[80vh] overflow-y-auto bg-cinema-panel border-t sm:border border-cinema-border rounded-t-2xl sm:rounded-2xl p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-extrabold text-cinema-gold">Who's swiping?</h2>
+              <button onClick={() => { setShowProfileSwitcher(false); setShowCreateLocalProfile(false); }} className="text-cinema-mutedDark hover:text-stone-50" aria-label="Close">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {!showCreateLocalProfile ? (
+              <>
+                <div className="space-y-2 mb-3">
+                  <button
+                    onClick={() => { switchToOwnAccount(); setShowProfileSwitcher(false); }}
+                    className={"w-full flex items-center gap-2 p-2 rounded-lg border text-left " + (!activeProfileId ? "border-cinema-gold bg-cinema-gold/10" : "border-cinema-border bg-cinema-bg")}
+                  >
+                    <div className={`w-7 h-7 rounded-full ${avatarColor(realEmail)} flex items-center justify-center text-cinema-ink font-extrabold text-xs`}>
+                      {(session?.user?.name || realEmail || "?")[0]?.toUpperCase()}
+                    </div>
+                    <span className="text-sm font-bold">{session?.user?.name || realEmail} (you)</span>
+                  </button>
+
+                  {/* profiles I manage directly, from my own account — works across any device */}
+                  {myManagedLocalProfiles.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => { switchToProfile(p.id, p.name); setShowProfileSwitcher(false); }}
+                      className={"w-full flex items-center gap-2 p-2 rounded-lg border text-left " + (activeProfileId === p.id ? "border-cinema-gold bg-cinema-gold/10" : "border-cinema-border bg-cinema-bg")}
+                    >
+                      <div className={`w-7 h-7 rounded-full ${avatarColor(p.id)} flex items-center justify-center text-cinema-ink font-extrabold text-xs`}>
+                        {p.name?.[0]?.toUpperCase()}
+                      </div>
+                      <span className="text-sm font-bold">{p.name}</span>
+                    </button>
+                  ))}
+
+                  {/* local profiles in the current family managed by a co-parent, not yet on my own list */}
+                  {members
+                    .filter((m) => m.isLocalProfile && !myManagedLocalProfiles.some((p) => p.id === m.email))
+                    .map((m) => (
+                      <button
+                        key={m.email}
+                        onClick={() => { switchToProfile(m.email, m.name); setShowProfileSwitcher(false); }}
+                        className={"w-full flex items-center gap-2 p-2 rounded-lg border text-left " + (activeProfileId === m.email ? "border-cinema-gold bg-cinema-gold/10" : "border-cinema-border bg-cinema-bg")}
+                      >
+                        <div className={`w-7 h-7 rounded-full ${avatarColor(m.email)} flex items-center justify-center text-cinema-ink font-extrabold text-xs`}>
+                          {m.name?.[0]?.toUpperCase()}
+                        </div>
+                        <span className="text-sm font-bold">{m.name}</span>
+                        <span className="text-[10px] text-cinema-mutedDark ml-auto">in this family</span>
+                      </button>
+                    ))}
+                </div>
+
+                {!activeProfileId && profile?.group && (
+                  <button onClick={() => setShowCreateLocalProfile(true)} className="text-xs font-bold text-cinema-gold hover:underline">
+                    + Add a kid profile (no email needed)
+                  </button>
+                )}
+              </>
+            ) : (
+              <div>
+                <p className="text-xs text-cinema-muted mb-3">
+                  For a kid who doesn't have their own email or phone — they'll show up as their own profile with their own votes, ratings, and age-based rating limits, right here on this device (or any device you sign into).
+                </p>
+                <label className="text-xs font-bold text-cinema-muted uppercase tracking-wide">Name</label>
+                <input
+                  value={newLocalProfileName}
+                  onChange={(e) => setNewLocalProfileName(e.target.value)}
+                  placeholder="e.g. Maya"
+                  className="w-full mt-1 mb-3 px-3 py-2 rounded-lg bg-cinema-bg border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold"
+                />
+                <label className="text-xs font-bold text-cinema-muted uppercase tracking-wide">Date of birth</label>
+                <div className="mt-1 mb-3">
+                  <DobFields
+                    month={newLocalProfileDobMonth}
+                    day={newLocalProfileDobDay}
+                    year={newLocalProfileDobYear}
+                    setMonth={setNewLocalProfileDobMonth}
+                    setDay={setNewLocalProfileDobDay}
+                    setYear={setNewLocalProfileDobYear}
+                  />
+                </div>
+                <label className="text-xs font-bold text-cinema-muted uppercase tracking-wide">Content rating limit</label>
+                <select
+                  value={newLocalProfileMaxRating}
+                  onChange={(e) => setNewLocalProfileMaxRating(e.target.value)}
+                  className="w-full mt-1 mb-3 px-3 py-2 rounded-lg bg-cinema-bg border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold"
+                >
+                  {RATINGS.map((r) => (
+                    <option key={r} value={r}>{r} and under</option>
+                  ))}
+                </select>
+                {newLocalProfileError && <p className="text-cinema-orangeLight text-xs mb-3">{newLocalProfileError}</p>}
+                <div className="flex gap-2">
+                  <button onClick={() => setShowCreateLocalProfile(false)} className="flex-1 py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-mutedLight font-bold">
+                    Cancel
+                  </button>
+                  <button
+                    onClick={submitCreateLocalProfile}
+                    disabled={newLocalProfileBusy}
+                    className="flex-1 py-2 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight disabled:opacity-50"
+                  >
+                    {newLocalProfileBusy ? "Creating…" : "Create"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {memberActionConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6" onClick={() => setMemberActionConfirm(null)}>
           <div className="bg-cinema-panel border border-cinema-border rounded-2xl p-5 max-w-xs w-full" onClick={(e) => e.stopPropagation()}>
@@ -2795,6 +3017,17 @@ export default function Home() {
         <div className="flex items-center gap-2">
           <Film className="w-6 h-6 text-cinema-gold" />
           <h1 className="text-2xl text-cinema-gold" style={displayFont}>Family Movie Match</h1>
+          {profile?.group && (
+            <button
+              onClick={() => setShowProfileSwitcher(true)}
+              className="ml-1 flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-cinema-panel border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold"
+            >
+              <div className={`w-4 h-4 rounded-full ${avatarColor(email)} flex items-center justify-center text-cinema-ink font-extrabold`} style={{ fontSize: "8px" }}>
+                {(displayName || "?")[0]?.toUpperCase()}
+              </div>
+              {activeProfileId ? displayName : "You"}
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-3">
           {profile?.group && roomMeta && (
@@ -3976,6 +4209,11 @@ export default function Home() {
                   {m.role && (
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold uppercase">
                       {m.role}
+                    </span>
+                  )}
+                  {m.isLocalProfile && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-gold/20 text-cinema-gold font-bold uppercase" title="No email — created on a family member's device">
+                      Local profile
                     </span>
                   )}
                 </div>
