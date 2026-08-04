@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
-import { Heart, X, Users, Settings, Play, Sparkles, Film, LogOut, RefreshCw, Star, Ticket, Eye, Clock, Compass, RotateCcw, ShoppingCart, Search } from "lucide-react";
+import { Heart, X, Users, Settings, Play, Sparkles, Film, LogOut, RefreshCw, Star, Ticket, Eye, Clock, Compass, RotateCcw, ShoppingCart, Search, Pencil } from "lucide-react";
 
 const SERVICES = [
   { id: 8, name: "Netflix" },
@@ -3614,7 +3614,8 @@ export default function Home() {
           <div className="max-w-lg mx-auto space-y-3">
             {(profile?.groups?.length ? profile.groups : profile?.group ? [{ code: profile.group, nickname: profile.group }] : []).length > 1 && (
               <div className="mb-4">
-                <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Your families</div>
+                <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-1">Your families</div>
+                <p className="text-[11px] text-cinema-mutedDark mb-2">Tap a name below to give that family your own nickname — just for you.</p>
                 <div className="space-y-2">
                   {(profile?.groups?.length ? profile.groups : [{ code: profile.group, nickname: profile.group }]).map((g) => (
                     <div key={g.code} className={"flex items-center gap-2 p-2 rounded-lg border " + (g.code === activeRoomCode ? "border-cinema-gold bg-cinema-gold/10" : "border-cinema-border bg-cinema-panel")}>
@@ -3623,12 +3624,14 @@ export default function Home() {
                           autoFocus
                           value={nicknameInput}
                           onChange={(e) => setNicknameInput(e.target.value)}
+                          onFocus={(e) => e.target.select()}
+                          placeholder="Your nickname for this family"
                           onBlur={() => {
                             updateFamilyNickname(g.code, nicknameInput.trim() || g.code);
                             setEditingNicknameFor(null);
                           }}
                           onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
-                          className="flex-1 px-2 py-1 rounded bg-cinema-bg border border-cinema-border text-stone-50 text-sm outline-none focus:border-cinema-gold"
+                          className="flex-1 px-2 py-1 rounded bg-cinema-bg border border-cinema-gold text-stone-50 text-sm outline-none"
                         />
                       ) : (
                         <button
@@ -3636,9 +3639,10 @@ export default function Home() {
                             setEditingNicknameFor(g.code);
                             setNicknameInput(g.nickname || g.code);
                           }}
-                          className="flex-1 text-left text-sm font-bold hover:text-cinema-gold"
+                          className="flex-1 flex items-center gap-1.5 text-left text-sm font-bold hover:text-cinema-gold group"
                         >
-                          {g.nickname || g.code} <span className="text-cinema-mutedDark font-normal">({g.code})</span>
+                          <span>{g.nickname || g.code} <span className="text-cinema-mutedDark font-normal">({g.code})</span></span>
+                          <Pencil className="w-3 h-3 text-cinema-mutedDark group-hover:text-cinema-gold flex-shrink-0" />
                         </button>
                       )}
                       {g.code !== activeRoomCode && (
