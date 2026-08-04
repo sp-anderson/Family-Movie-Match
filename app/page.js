@@ -3171,7 +3171,7 @@ export default function Home() {
             </div>
             <div className="mb-5">
               <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Services you're subscribed to</div>
-              <div className="flex flex-wrap gap-2">{availableProviders.map((s) => <Chip key={s.id} active={servicesInput.includes(s.id)} onClick={() => toggleService(s.id)}>{s.name}</Chip>)}</div>
+              <div className="flex flex-wrap gap-2">{[...availableProviders].sort((a, b) => a.name.localeCompare(b.name)).map((s) => <Chip key={s.id} active={servicesInput.includes(s.id)} onClick={() => toggleService(s.id)}>{s.name}</Chip>)}</div>
             </div>
             <div className="mb-5">
               <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Going out to the movies?</div>
