@@ -916,7 +916,6 @@ export default function Home() {
   const [activeProfileName, setActiveProfileName] = useState(null);
   const [myManagedLocalProfiles, setMyManagedLocalProfiles] = useState([]); // loaded from the REAL account, independent of whichever profile is currently active — this is what makes local profiles findable across devices
   const [showProfileSwitcher, setShowProfileSwitcher] = useState(false);
-  const [showRoomSwitcher, setShowRoomSwitcher] = useState(false);
   const [showCreateLocalProfile, setShowCreateLocalProfile] = useState(false);
   const [newLocalProfileName, setNewLocalProfileName] = useState("");
   const [newLocalProfileDobMonth, setNewLocalProfileDobMonth] = useState("");
@@ -2846,9 +2845,10 @@ export default function Home() {
 
             {!showCreateLocalProfile ? (
               <>
+                <div className="text-[10px] font-bold text-cinema-muted uppercase tracking-wide mb-1">Who's swiping</div>
                 <div className="space-y-2 mb-3">
                   <button
-                    onClick={() => { switchToOwnAccount(); setShowProfileSwitcher(false); }}
+                    onClick={() => { switchToOwnAccount(); }}
                     className={"w-full flex items-center gap-2 p-2 rounded-lg border text-left " + (!activeProfileId ? "border-cinema-gold bg-cinema-gold/10" : "border-cinema-border bg-cinema-bg")}
                   >
                     <div className={`w-7 h-7 rounded-full ${avatarColor(realEmail)} flex items-center justify-center text-cinema-ink font-extrabold text-xs`}>
@@ -2861,7 +2861,7 @@ export default function Home() {
                   {myManagedLocalProfiles.map((p) => (
                     <button
                       key={p.id}
-                      onClick={() => { switchToProfile(p.id, p.name); setShowProfileSwitcher(false); }}
+                      onClick={() => { switchToProfile(p.id, p.name); }}
                       className={"w-full flex items-center gap-2 p-2 rounded-lg border text-left " + (activeProfileId === p.id ? "border-cinema-gold bg-cinema-gold/10" : "border-cinema-border bg-cinema-bg")}
                     >
                       <div className={`w-7 h-7 rounded-full ${avatarColor(p.id)} flex items-center justify-center text-cinema-ink font-extrabold text-xs`}>
@@ -2877,7 +2877,7 @@ export default function Home() {
                     .map((m) => (
                       <button
                         key={m.email}
-                        onClick={() => { switchToProfile(m.email, m.name); setShowProfileSwitcher(false); }}
+                        onClick={() => { switchToProfile(m.email, m.name); }}
                         className={"w-full flex items-center gap-2 p-2 rounded-lg border text-left " + (activeProfileId === m.email ? "border-cinema-gold bg-cinema-gold/10" : "border-cinema-border bg-cinema-bg")}
                       >
                         <div className={`w-7 h-7 rounded-full ${avatarColor(m.email)} flex items-center justify-center text-cinema-ink font-extrabold text-xs`}>
@@ -2894,6 +2894,58 @@ export default function Home() {
                     + Add a kid profile (no email needed)
                   </button>
                 )}
+
+                <div className="text-[10px] font-bold text-cinema-muted uppercase tracking-wide mt-4 mb-1 pt-3 border-t border-cinema-border">Family / Movie Night</div>
+                <div className="space-y-2 mb-1">
+                  {(profile?.groups?.length ? profile.groups : profile?.group ? [{ code: profile.group, nickname: profile.group }] : []).map((g) => (
+                    <button
+                      key={g.code}
+                      onClick={() => {
+                        if (!(roomMeta?.type === "family" && g.code === activeRoomCode)) switchFamily(g.code);
+                      }}
+                      className={
+                        "w-full flex items-center justify-between text-left px-2 py-1.5 rounded-lg text-sm " +
+                        (roomMeta?.type === "family" && g.code === activeRoomCode ? "bg-cinema-gold/15 text-cinema-gold font-bold" : "text-stone-50 hover:bg-cinema-bg")
+                      }
+                    >
+                      <span>{g.nickname || g.code}</span>
+                      {roomMeta?.type === "family" && g.code === activeRoomCode && <span className="text-[10px]">Current</span>}
+                    </button>
+                  ))}
+                  {profile?.currentRoom && (
+                    <button
+                      onClick={() => {
+                        if (roomMeta?.type !== "movie-night") switchToActiveMovieNight();
+                      }}
+                      className={
+                        "w-full flex items-center justify-between text-left px-2 py-1.5 rounded-lg text-sm " +
+                        (roomMeta?.type === "movie-night" ? "bg-cinema-gold/15 text-cinema-gold font-bold" : "text-stone-50 hover:bg-cinema-bg")
+                      }
+                    >
+                      <span>Movie Night {profile.currentRoom}</span>
+                      {roomMeta?.type === "movie-night" && <span className="text-[10px]">Current</span>}
+                    </button>
+                  )}
+                </div>
+                <button
+                  onClick={() => { setShowProfileSwitcher(false); setScreen("group"); setShowJoinAnother(true); }}
+                  className="text-xs font-bold text-cinema-gold hover:underline block mb-1"
+                >
+                  + Join / start another family
+                </button>
+                <button
+                  onClick={() => { setShowProfileSwitcher(false); setShowNightPanel(true); }}
+                  className="text-xs font-bold text-cinema-gold hover:underline block"
+                >
+                  Start or join a Movie Night
+                </button>
+
+                <button
+                  onClick={() => signOut()}
+                  className="w-full flex items-center gap-2 text-left px-2 py-2 rounded-lg text-sm text-cinema-mutedLight hover:bg-cinema-bg mt-4 pt-3 border-t border-cinema-border"
+                >
+                  <LogOut className="w-4 h-4" /> Sign out
+                </button>
               </>
             ) : (
               <div>
@@ -3032,79 +3084,23 @@ export default function Home() {
         <div className="flex items-center gap-2">
           <Film className="w-6 h-6 text-cinema-gold" />
           <h1 className="text-2xl text-cinema-gold" style={displayFont}>Family Movie Match</h1>
-          {profile?.group && (
-            <button
-              onClick={() => setShowProfileSwitcher(true)}
-              className="ml-1 flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-cinema-panel border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold"
-            >
-              <div className={`w-4 h-4 rounded-full ${avatarColor(email)} flex items-center justify-center text-cinema-ink font-extrabold`} style={{ fontSize: "8px" }}>
-                {(displayName || "?")[0]?.toUpperCase()}
-              </div>
-              {activeProfileId ? displayName : "You"}
-            </button>
-          )}
         </div>
-        <div className="flex items-center gap-3 relative">
-          {profile?.group && roomMeta && (
-            <button
-              onClick={() => setShowRoomSwitcher((s) => !s)}
-              className="flex items-center gap-1 text-xs text-cinema-muted font-bold px-2 py-1 rounded-lg hover:bg-cinema-panel hover:text-cinema-gold"
-            >
-              {roomMeta.type === "movie-night"
-                ? `Movie Night ${activeRoomCode}`
-                : `Family ${(profile?.groups || []).find((g) => g.code === profile.group)?.nickname || profile.group}`}
-              <ChevronDown className="w-3 h-3" />
-            </button>
-          )}
-          {showRoomSwitcher && (
-            <>
-              <div className="fixed inset-0 z-30" onClick={() => setShowRoomSwitcher(false)} />
-              <div className="absolute top-full right-0 mt-1 z-40 w-64 bg-cinema-panel border border-cinema-border rounded-xl p-2 shadow-2xl">
-              <div className="text-[10px] font-bold text-cinema-muted uppercase tracking-wide px-2 pt-1 pb-2">Switch to</div>
-              {(profile?.groups?.length ? profile.groups : profile?.group ? [{ code: profile.group, nickname: profile.group }] : []).map((g) => (
-                <button
-                  key={g.code}
-                  onClick={() => {
-                    setShowRoomSwitcher(false);
-                    if (!(roomMeta.type === "family" && g.code === activeRoomCode)) switchFamily(g.code);
-                  }}
-                  className={
-                    "w-full flex items-center justify-between text-left px-2 py-1.5 rounded-lg text-sm " +
-                    (roomMeta.type === "family" && g.code === activeRoomCode ? "bg-cinema-gold/15 text-cinema-gold font-bold" : "text-stone-50 hover:bg-cinema-bg")
-                  }
-                >
-                  <span>{g.nickname || g.code}</span>
-                  {roomMeta.type === "family" && g.code === activeRoomCode && <span className="text-[10px]">Current</span>}
-                </button>
-              ))}
-              {profile?.currentRoom && (
-                <button
-                  onClick={() => {
-                    setShowRoomSwitcher(false);
-                    if (roomMeta.type !== "movie-night") switchToActiveMovieNight();
-                  }}
-                  className={
-                    "w-full flex items-center justify-between text-left px-2 py-1.5 rounded-lg text-sm mt-1 border-t border-cinema-border pt-2 " +
-                    (roomMeta.type === "movie-night" ? "bg-cinema-gold/15 text-cinema-gold font-bold" : "text-stone-50 hover:bg-cinema-bg")
-                  }
-                >
-                  <span>Movie Night {profile.currentRoom}</span>
-                  {roomMeta.type === "movie-night" && <span className="text-[10px]">Current</span>}
-                </button>
-              )}
+        {profile?.group && (
+          <button
+            onClick={() => setShowProfileSwitcher(true)}
+            className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-full bg-cinema-panel border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold"
+          >
+            <div className={`w-4 h-4 rounded-full ${avatarColor(email)} flex items-center justify-center text-cinema-ink font-extrabold`} style={{ fontSize: "8px" }}>
+              {(displayName || "?")[0]?.toUpperCase()}
             </div>
-            </>
-          )}
-          {profile?.group && (
-            <button
-              onClick={() => setShowNightPanel((s) => !s)}
-              className="text-xs font-bold px-2 py-1 rounded-lg bg-cinema-panel border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold"
-            >
-              Movie Night
-            </button>
-          )}
-          <button onClick={() => signOut()} className="text-cinema-muted hover:text-cinema-gold" title="Sign out"><LogOut className="w-4 h-4" /></button>
-        </div>
+            <span>{activeProfileId ? displayName : "You"}</span>
+            <span className="text-cinema-mutedDark">·</span>
+            <span>
+              {roomMeta?.type === "movie-night" ? `Movie Night ${activeRoomCode}` : (profile?.groups || []).find((g) => g.code === profile.group)?.nickname || profile.group}
+            </span>
+            <ChevronDown className="w-3 h-3" />
+          </button>
+        )}
       </div>
 
       {showNightPanel && (
