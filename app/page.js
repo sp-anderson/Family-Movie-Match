@@ -1702,6 +1702,13 @@ export default function Home() {
     return spotlight.filter((s) => s.movieId === movieId && s.byEmail !== email);
   }
 
+  function movieNightYesVoters(movieId) {
+    if (roomMeta?.type !== "movie-night") return [];
+    return members
+      .filter((m) => m.email !== email && (votes[movieId] || {})[m.email] === "yes")
+      .map((m) => ({ byEmail: m.email, byName: m.name }));
+  }
+
   const myVotedIds = useMemo(() => {
     const ids = new Set();
     Object.entries(votes).forEach(([mid, byEmail]) => {
@@ -1935,7 +1942,11 @@ export default function Home() {
     return movies;
   }, [filteredMovies, committedOrder, ratings, skippedOrder, roomMeta, votes, email]);
   const currentMovie = deck[0];
-  const currentMovieNudges = currentMovie ? nudgeRecommenders(currentMovie.id) : [];
+  const currentMovieNudges = currentMovie
+    ? [...nudgeRecommenders(currentMovie.id), ...movieNightYesVoters(currentMovie.id)].filter(
+        (n, idx, arr) => arr.findIndex((x) => x.byEmail === n.byEmail) === idx
+      )
+    : [];
 
   const cardShownAtRef = useRef(Date.now());
   useEffect(() => {
