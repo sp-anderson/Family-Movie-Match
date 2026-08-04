@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
-import { Heart, X, Users, Settings, Play, Sparkles, Film, LogOut, RefreshCw, Star, Ticket, Eye, Clock, Compass, RotateCcw, ShoppingCart, Search, Pencil } from "lucide-react";
+import { Heart, X, Users, Settings, Play, Sparkles, Film, LogOut, RefreshCw, Star, Ticket, Eye, Clock, Compass, RotateCcw, ShoppingCart, Search, Pencil, ChevronDown } from "lucide-react";
 
 const SERVICES = [
   { id: 8, name: "Netflix" },
@@ -916,6 +916,7 @@ export default function Home() {
   const [activeProfileName, setActiveProfileName] = useState(null);
   const [myManagedLocalProfiles, setMyManagedLocalProfiles] = useState([]); // loaded from the REAL account, independent of whichever profile is currently active — this is what makes local profiles findable across devices
   const [showProfileSwitcher, setShowProfileSwitcher] = useState(false);
+  const [showRoomSwitcher, setShowRoomSwitcher] = useState(false);
   const [showCreateLocalProfile, setShowCreateLocalProfile] = useState(false);
   const [newLocalProfileName, setNewLocalProfileName] = useState("");
   const [newLocalProfileDobMonth, setNewLocalProfileDobMonth] = useState("");
@@ -1513,13 +1514,27 @@ export default function Home() {
   }
 
   async function switchFamily(code) {
-    const merged = await saveProfile({ group: code });
+    const merged = await saveProfile({ group: code, currentRoom: null });
     setProfile(merged);
     const data = await loadGroup(code);
     setFamilyMembers((data && data.members) || []);
     setActiveRoomCode(code);
     setRoomMeta({ type: "family" });
     setRoleInput(merged?.dob && calculateAge(merged.dob) >= 18 ? "parent" : "child");
+    setScreen("setup");
+  }
+
+  async function switchToActiveMovieNight() {
+    if (!profile?.currentRoom) return;
+    const roomRes = await fetch(`/api/room?code=${encodeURIComponent(profile.currentRoom)}`);
+    const roomData = await roomRes.json();
+    if (!roomData.meta || (roomData.meta.expiresAt && roomData.meta.expiresAt < Date.now())) {
+      setError("That Movie Night has expired.");
+      return;
+    }
+    setActiveRoomCode(profile.currentRoom);
+    setRoomMeta(roomData.meta);
+    await loadGroup(profile.currentRoom);
     setScreen("setup");
   }
 
@@ -3029,13 +3044,56 @@ export default function Home() {
             </button>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 relative">
           {profile?.group && roomMeta && (
-            <span className="text-xs text-cinema-muted font-bold hidden sm:inline">
+            <button
+              onClick={() => setShowRoomSwitcher((s) => !s)}
+              className="flex items-center gap-1 text-xs text-cinema-muted font-bold px-2 py-1 rounded-lg hover:bg-cinema-panel hover:text-cinema-gold"
+            >
               {roomMeta.type === "movie-night"
                 ? `Movie Night ${activeRoomCode}`
                 : `Family ${(profile?.groups || []).find((g) => g.code === profile.group)?.nickname || profile.group}`}
-            </span>
+              <ChevronDown className="w-3 h-3" />
+            </button>
+          )}
+          {showRoomSwitcher && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setShowRoomSwitcher(false)} />
+              <div className="absolute top-full right-0 mt-1 z-40 w-64 bg-cinema-panel border border-cinema-border rounded-xl p-2 shadow-2xl">
+              <div className="text-[10px] font-bold text-cinema-muted uppercase tracking-wide px-2 pt-1 pb-2">Switch to</div>
+              {(profile?.groups?.length ? profile.groups : profile?.group ? [{ code: profile.group, nickname: profile.group }] : []).map((g) => (
+                <button
+                  key={g.code}
+                  onClick={() => {
+                    setShowRoomSwitcher(false);
+                    if (!(roomMeta.type === "family" && g.code === activeRoomCode)) switchFamily(g.code);
+                  }}
+                  className={
+                    "w-full flex items-center justify-between text-left px-2 py-1.5 rounded-lg text-sm " +
+                    (roomMeta.type === "family" && g.code === activeRoomCode ? "bg-cinema-gold/15 text-cinema-gold font-bold" : "text-stone-50 hover:bg-cinema-bg")
+                  }
+                >
+                  <span>{g.nickname || g.code}</span>
+                  {roomMeta.type === "family" && g.code === activeRoomCode && <span className="text-[10px]">Current</span>}
+                </button>
+              ))}
+              {profile?.currentRoom && (
+                <button
+                  onClick={() => {
+                    setShowRoomSwitcher(false);
+                    if (roomMeta.type !== "movie-night") switchToActiveMovieNight();
+                  }}
+                  className={
+                    "w-full flex items-center justify-between text-left px-2 py-1.5 rounded-lg text-sm mt-1 border-t border-cinema-border pt-2 " +
+                    (roomMeta.type === "movie-night" ? "bg-cinema-gold/15 text-cinema-gold font-bold" : "text-stone-50 hover:bg-cinema-bg")
+                  }
+                >
+                  <span>Movie Night {profile.currentRoom}</span>
+                  {roomMeta.type === "movie-night" && <span className="text-[10px]">Current</span>}
+                </button>
+              )}
+            </div>
+            </>
           )}
           {profile?.group && (
             <button
@@ -4171,9 +4229,22 @@ export default function Home() {
                 </button>
               </div>
             ) : !showJoinAnother ? (
-              <button onClick={() => setShowJoinAnother(true)} className="text-xs font-bold text-cinema-gold hover:underline mb-2">
-                + Join / start another family
-              </button>
+              <div className="flex items-center gap-3 mb-2">
+                <button onClick={() => setShowJoinAnother(true)} className="text-xs font-bold text-cinema-gold hover:underline">
+                  + Join / start another family
+                </button>
+                {!activeProfileId && (
+                  <button
+                    onClick={() => {
+                      setShowProfileSwitcher(true);
+                      setShowCreateLocalProfile(true);
+                    }}
+                    className="text-xs font-bold text-cinema-gold hover:underline"
+                  >
+                    + Add a kid profile
+                  </button>
+                )}
+              </div>
             ) : (
               <div className="mb-2 space-y-2">
                 <button onClick={createNewFamily} className="w-full py-2 rounded-lg bg-cinema-gold text-cinema-ink text-sm font-bold hover:bg-cinema-goldLight">
