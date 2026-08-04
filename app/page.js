@@ -2896,6 +2896,16 @@ export default function Home() {
                 )}
 
                 <div className="text-[10px] font-bold text-cinema-muted uppercase tracking-wide mt-4 mb-1 pt-3 border-t border-cinema-border">Family / Movie Night</div>
+                <button
+                  onClick={() => { setShowProfileSwitcher(false); setShowNightPanel(true); }}
+                  className="w-full flex items-center gap-2.5 p-3 rounded-lg border border-cinema-gold bg-cinema-gold/10 hover:bg-cinema-gold/20 text-left mb-2"
+                >
+                  <Film className="w-5 h-5 text-cinema-gold flex-shrink-0" />
+                  <div>
+                    <div className="text-sm font-bold text-cinema-gold">Start or join a Movie Night</div>
+                    <div className="text-[11px] text-cinema-gold/80">Quick match with anyone — no family needed</div>
+                  </div>
+                </button>
                 <div className="space-y-2 mb-1">
                   {(profile?.groups?.length ? profile.groups : profile?.group ? [{ code: profile.group, nickname: profile.group }] : []).map((g) => (
                     <button
@@ -2932,12 +2942,6 @@ export default function Home() {
                   className="text-xs font-bold text-cinema-gold hover:underline block mb-1"
                 >
                   + Join / start another family
-                </button>
-                <button
-                  onClick={() => { setShowProfileSwitcher(false); setShowNightPanel(true); }}
-                  className="text-xs font-bold text-cinema-gold hover:underline block"
-                >
-                  Start or join a Movie Night
                 </button>
 
                 <button
@@ -4111,6 +4115,18 @@ export default function Home() {
 
         {screen === "group" && (
           <div className="max-w-lg mx-auto space-y-3">
+            <button
+              onClick={() => setShowNightPanel(true)}
+              className="w-full flex items-start gap-3 p-4 rounded-xl border border-cinema-gold bg-cinema-gold/10 hover:bg-cinema-gold/20 text-left mb-1"
+            >
+              <Film className="w-6 h-6 text-cinema-gold flex-shrink-0 mt-0.5" />
+              <div>
+                <div className="text-sm font-extrabold text-cinema-gold mb-1">Movie Night</div>
+                <div className="text-xs text-cinema-gold/80">
+                  Match with anyone right now — friends, extended family, people who've never used the app before. Share a code, everyone swipes, get an instant match. No permanent family required.
+                </div>
+              </div>
+            </button>
             {(profile?.groups?.length ? profile.groups : profile?.group ? [{ code: profile.group, nickname: profile.group }] : []).length > 1 && (
               <div className="mb-4">
                 <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-1">Your families</div>
