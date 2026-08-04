@@ -3655,26 +3655,32 @@ export default function Home() {
 
             {!showJoinAnother ? (
               <button onClick={() => setShowJoinAnother(true)} className="text-xs font-bold text-cinema-gold hover:underline mb-2">
-                + Join another family
+                + Join / start another family
               </button>
             ) : (
-              <div className="flex gap-2 mb-2">
-                <input
-                  value={groupInput}
-                  onChange={(e) => setGroupInput(e.target.value.toUpperCase())}
-                  placeholder="Enter their code"
-                  className="flex-1 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 text-sm outline-none focus:border-cinema-gold"
-                />
-                <button
-                  onClick={async () => {
-                    await handleJoin();
-                    setShowJoinAnother(false);
-                    setGroupInput("");
-                  }}
-                  className="px-3 py-2 rounded-lg bg-cinema-gold text-cinema-ink text-sm font-bold hover:bg-cinema-goldLight"
-                >
-                  Join
-                </button>
+              <div className="mb-2">
+                <div className="flex gap-2 mb-1">
+                  <input
+                    value={groupInput}
+                    onChange={(e) => setGroupInput(e.target.value.toUpperCase())}
+                    placeholder="e.g. THOMPSONS"
+                    className="flex-1 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 text-sm outline-none focus:border-cinema-gold"
+                  />
+                  <button onClick={randomCode} className="px-3 py-2 rounded-lg bg-cinema-panel text-cinema-mutedLight text-xs font-bold hover:bg-cinema-border">
+                    New
+                  </button>
+                  <button
+                    onClick={async () => {
+                      await handleJoin();
+                      setShowJoinAnother(false);
+                      setGroupInput("");
+                    }}
+                    className="px-3 py-2 rounded-lg bg-cinema-gold text-cinema-ink text-sm font-bold hover:bg-cinema-goldLight"
+                  >
+                    Go
+                  </button>
+                </div>
+                <p className="text-[11px] text-cinema-mutedDark">Starting a new family? Tap "New" for a random code. Joining someone? Enter the exact code they shared with you.</p>
               </div>
             )}
 
