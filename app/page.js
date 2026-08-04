@@ -566,6 +566,12 @@ export default function Home() {
   const [editingNicknameFor, setEditingNicknameFor] = useState(null);
   const [nicknameInput, setNicknameInput] = useState("");
   const [showJoinAnother, setShowJoinAnother] = useState(false);
+  const [newFamilyCode, setNewFamilyCode] = useState(null);
+  const [newFamilyNicknameInput, setNewFamilyNicknameInput] = useState("");
+  const [newFamilyInviteContact, setNewFamilyInviteContact] = useState("");
+  const [newFamilyInviteSent, setNewFamilyInviteSent] = useState(false);
+  const [familyInviteContact, setFamilyInviteContact] = useState("");
+  const [familyInviteSent, setFamilyInviteSent] = useState(false);
   const [memberActionConfirm, setMemberActionConfirm] = useState(null); // { email, name, action: "remove" | "block" }
 
   const [manualQuery, setManualQuery] = useState("");
@@ -844,6 +850,18 @@ export default function Home() {
   const [loadingProfile, setLoadingProfile] = useState(true);
 
   const [groupInput, setGroupInput] = useState("");
+  const [inviteJoinCode, setInviteJoinCode] = useState(null);
+  const [inviteJoinBusy, setInviteJoinBusy] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const joinCode = params.get("joinCode");
+    if (joinCode) {
+      setGroupInput(joinCode.toUpperCase());
+      setInviteJoinCode(joinCode.toUpperCase());
+    }
+  }, []);
+
   const [regionInput, setRegionInput] = useState("CA");
   const [availableProviders, setAvailableProviders] = useState(SERVICES); // live list from TMDB, falls back to the static set while loading
   const [providerNameMap, setProviderNameMap] = useState(() => Object.fromEntries(SERVICES.map((s) => [s.id, s.name])));
@@ -1317,6 +1335,71 @@ export default function Home() {
     setScreen("setup");
   }
 
+  async function acceptInviteJoin() {
+    setInviteJoinBusy(true);
+    await handleJoin();
+    setInviteJoinCode(null);
+    setInviteJoinBusy(false);
+  }
+
+  function dismissInviteJoin() {
+    setInviteJoinCode(null);
+  }
+
+  async function sendFamilyInvite(code, nickname, contact) {
+    const trimmed = contact.trim();
+    if (!trimmed) return false;
+    const isEmail = trimmed.includes("@");
+    if (isEmail) {
+      try {
+        const res = await fetch("/api/invite", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ toEmail: trimmed, familyCode: code, familyNickname: nickname, inviterName: displayName }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data.error || "Couldn't send the invite.");
+          return false;
+        }
+        return true;
+      } catch {
+        setError("Couldn't send the invite.");
+        return false;
+      }
+    }
+    // treat as a phone number — open their own messaging app pre-filled,
+    // same zero-setup pattern already used for Movie Night sharing, since
+    // actually sending SMS ourselves would need a separate paid service
+    const text = `${displayName} invited you to join ${nickname || "their family"} on Family Movie Match! Sign in and enter code ${code} at ${window.location.origin}`;
+    window.location.href = `sms:${trimmed}?body=${encodeURIComponent(text)}`;
+    return true;
+  }
+
+  async function createNewFamily() {
+    const code = Math.random().toString(36).slice(2, 7).toUpperCase();
+    const currentGroups = profile?.groups?.length ? profile.groups : profile?.group ? [{ code: profile.group, nickname: profile.group }] : [];
+    const nextGroups = [...currentGroups, { code, nickname: code }];
+    const merged = await saveProfile({ group: code, groups: nextGroups });
+    setProfile(merged);
+    const data = await loadGroup(code);
+    setFamilyMembers((data && data.members) || []);
+    setActiveRoomCode(code);
+    setRoomMeta({ type: "family" });
+    setRoleInput(merged?.dob && calculateAge(merged.dob) >= 18 ? "parent" : "child");
+    setNewFamilyCode(code);
+    setNewFamilyNicknameInput("");
+  }
+
+  async function confirmNewFamilyNickname() {
+    if (newFamilyCode && newFamilyNicknameInput.trim()) {
+      await updateFamilyNickname(newFamilyCode, newFamilyNicknameInput.trim());
+    }
+    setNewFamilyCode(null);
+    setShowJoinAnother(false);
+    setScreen("setup");
+  }
+
   async function switchFamily(code) {
     const merged = await saveProfile({ group: code });
     setProfile(merged);
@@ -1334,9 +1417,6 @@ export default function Home() {
     setProfile(merged);
   }
 
-  function randomCode() {
-    setGroupInput(Math.random().toString(36).slice(2, 7).toUpperCase());
-  }
   function toggleService(id) {
     setServicesInput((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   }
@@ -2638,6 +2718,20 @@ export default function Home() {
           </button>
         </div>
       )}
+      {inviteJoinCode &&
+        profile?.dob &&
+        !(profile?.groups || []).some((g) => g.code === inviteJoinCode) &&
+        profile?.group !== inviteJoinCode && (
+          <div className="px-5 py-2 bg-cinema-gold/15 border-b border-cinema-gold text-center text-xs font-bold text-cinema-gold flex items-center justify-center gap-2 flex-wrap">
+            <span>You've been invited to join family {inviteJoinCode}</span>
+            <button onClick={acceptInviteJoin} disabled={inviteJoinBusy} className="underline hover:no-underline disabled:opacity-60">
+              {inviteJoinBusy ? "Joining…" : "Join now"}
+            </button>
+            <button onClick={dismissInviteJoin} className="underline hover:no-underline">
+              Dismiss
+            </button>
+          </div>
+        )}
       <div className="px-5 pt-5 pb-3 flex items-center justify-between border-b border-cinema-border/60">
         <div className="flex items-center gap-2">
           <Film className="w-6 h-6 text-cinema-gold" />
@@ -2882,14 +2976,73 @@ export default function Home() {
 
         {screen === "join" && (
           <div className="max-w-sm mx-auto py-8">
-            <p className="text-cinema-muted mb-6 text-sm">Signed in as {displayName}. Create a family group, join one with a shared code, or enter a Movie Night code someone sent you.</p>
-            <label className="text-xs font-bold text-cinema-muted uppercase tracking-wide">Family group or Movie Night code</label>
-            <div className="flex gap-2 mt-1 mb-2">
-              <input value={groupInput} onChange={(e) => setGroupInput(e.target.value.toUpperCase())} placeholder="e.g. THOMPSONS or MN-A1B2C" className="flex-1 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold" />
-              <button onClick={randomCode} className="px-3 py-2 rounded-lg bg-cinema-panel text-cinema-mutedLight text-xs font-bold hover:bg-cinema-border">New</button>
-            </div>
-            <p className="text-xs text-cinema-mutedDark mb-5">Creating a new family group? Use "New" for a random code. Joining someone? Enter the exact code they shared with you.</p>
-            <button onClick={handleJoin} className="w-full py-2.5 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight">Continue</button>
+            {newFamilyCode ? (
+              <>
+                <p className="text-cinema-muted mb-2 text-sm">Your family's code is <span className="text-cinema-gold font-bold">{newFamilyCode}</span> — share it with anyone who should join.</p>
+                <label className="text-xs font-bold text-cinema-muted uppercase tracking-wide">What should we call this family?</label>
+                <input
+                  autoFocus
+                  value={newFamilyNicknameInput}
+                  onChange={(e) => setNewFamilyNicknameInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && confirmNewFamilyNickname()}
+                  placeholder="e.g. The Thompsons, Mom's House…"
+                  className="w-full mt-1 mb-2 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-gold text-stone-50 outline-none"
+                />
+                <p className="text-xs text-cinema-mutedDark mb-5">This is just for you — everyone else can name it their own way. You can change it any time.</p>
+
+                <label className="text-xs font-bold text-cinema-muted uppercase tracking-wide">Invite someone (optional)</label>
+                <div className="flex gap-2 mt-1 mb-2">
+                  <input
+                    value={newFamilyInviteContact}
+                    onChange={(e) => {
+                      setNewFamilyInviteContact(e.target.value);
+                      setNewFamilyInviteSent(false);
+                    }}
+                    placeholder="Email or phone number"
+                    className="flex-1 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold"
+                  />
+                  <button
+                    onClick={async () => {
+                      const ok = await sendFamilyInvite(newFamilyCode, newFamilyNicknameInput || newFamilyCode, newFamilyInviteContact);
+                      if (ok) {
+                        setNewFamilyInviteSent(true);
+                        setNewFamilyInviteContact("");
+                      }
+                    }}
+                    className="px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 text-sm font-bold hover:border-cinema-gold"
+                  >
+                    Invite
+                  </button>
+                </div>
+                {newFamilyInviteSent && <p className="text-xs text-cinema-green font-bold mb-3">Invite sent!</p>}
+
+                <button onClick={confirmNewFamilyNickname} className="w-full py-2.5 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight">Continue</button>
+              </>
+            ) : (
+              <>
+                <p className="text-cinema-muted mb-6 text-sm">Signed in as {displayName}. Start a new family, join one with a shared code, or enter a Movie Night code someone sent you.</p>
+
+                <button onClick={createNewFamily} className="w-full py-2.5 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight mb-4">
+                  Start a new family
+                </button>
+
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="flex-1 h-px bg-cinema-border" />
+                  <span className="text-[11px] text-cinema-mutedDark">or</span>
+                  <div className="flex-1 h-px bg-cinema-border" />
+                </div>
+
+                <label className="text-xs font-bold text-cinema-muted uppercase tracking-wide">Family or Movie Night code</label>
+                <input
+                  value={groupInput}
+                  onChange={(e) => setGroupInput(e.target.value.toUpperCase())}
+                  placeholder="e.g. THOMPSONS or MN-A1B2C"
+                  className="w-full mt-1 mb-2 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold"
+                />
+                <p className="text-xs text-cinema-mutedDark mb-5">Enter the exact code someone shared with you.</p>
+                <button onClick={handleJoin} className="w-full py-2.5 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 font-extrabold hover:border-cinema-gold">Join with code</button>
+              </>
+            )}
           </div>
         )}
 
@@ -3657,34 +3810,102 @@ export default function Home() {
             )}
             <p className="text-xs text-cinema-mutedDark mb-2">Share code <span className="text-cinema-gold font-bold">{activeRoomCode}</span> with anyone else who should join.</p>
 
-            {!showJoinAnother ? (
+            <div className="flex gap-2 mb-1">
+              <input
+                value={familyInviteContact}
+                onChange={(e) => {
+                  setFamilyInviteContact(e.target.value);
+                  setFamilyInviteSent(false);
+                }}
+                placeholder="Invite by email or phone"
+                className="flex-1 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 text-sm outline-none focus:border-cinema-gold"
+              />
+              <button
+                onClick={async () => {
+                  const nickname = (profile?.groups || []).find((g) => g.code === activeRoomCode)?.nickname;
+                  const ok = await sendFamilyInvite(activeRoomCode, nickname, familyInviteContact);
+                  if (ok) {
+                    setFamilyInviteSent(true);
+                    setFamilyInviteContact("");
+                  }
+                }}
+                className="px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 text-sm font-bold hover:border-cinema-gold"
+              >
+                Invite
+              </button>
+            </div>
+            {familyInviteSent && <p className="text-xs text-cinema-green font-bold mb-2">Invite sent!</p>}
+
+            {newFamilyCode ? (
+              <div className="mb-2 p-3 rounded-lg bg-cinema-panel border border-cinema-gold">
+                <p className="text-xs text-cinema-muted mb-2">Your new family's code is <span className="text-cinema-gold font-bold">{newFamilyCode}</span>. What should we call it?</p>
+                <div className="flex gap-2 mb-2">
+                  <input
+                    autoFocus
+                    value={newFamilyNicknameInput}
+                    onChange={(e) => setNewFamilyNicknameInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && confirmNewFamilyNickname()}
+                    placeholder="e.g. The Thompsons"
+                    className="flex-1 px-3 py-2 rounded-lg bg-cinema-bg border border-cinema-gold text-stone-50 text-sm outline-none"
+                  />
+                </div>
+                <p className="text-[11px] text-cinema-mutedDark mb-1">Invite someone (optional)</p>
+                <div className="flex gap-2 mb-2">
+                  <input
+                    value={newFamilyInviteContact}
+                    onChange={(e) => {
+                      setNewFamilyInviteContact(e.target.value);
+                      setNewFamilyInviteSent(false);
+                    }}
+                    placeholder="Email or phone number"
+                    className="flex-1 px-3 py-2 rounded-lg bg-cinema-bg border border-cinema-border text-stone-50 text-sm outline-none focus:border-cinema-gold"
+                  />
+                  <button
+                    onClick={async () => {
+                      const ok = await sendFamilyInvite(newFamilyCode, newFamilyNicknameInput || newFamilyCode, newFamilyInviteContact);
+                      if (ok) {
+                        setNewFamilyInviteSent(true);
+                        setNewFamilyInviteContact("");
+                      }
+                    }}
+                    className="px-3 py-2 rounded-lg bg-cinema-bg border border-cinema-border text-stone-50 text-xs font-bold hover:border-cinema-gold"
+                  >
+                    Invite
+                  </button>
+                </div>
+                {newFamilyInviteSent && <p className="text-xs text-cinema-green font-bold mb-2">Invite sent!</p>}
+                <button onClick={confirmNewFamilyNickname} className="w-full px-3 py-2 rounded-lg bg-cinema-gold text-cinema-ink text-sm font-bold hover:bg-cinema-goldLight">
+                  Done
+                </button>
+              </div>
+            ) : !showJoinAnother ? (
               <button onClick={() => setShowJoinAnother(true)} className="text-xs font-bold text-cinema-gold hover:underline mb-2">
                 + Join / start another family
               </button>
             ) : (
-              <div className="mb-2">
-                <div className="flex gap-2 mb-1">
+              <div className="mb-2 space-y-2">
+                <button onClick={createNewFamily} className="w-full py-2 rounded-lg bg-cinema-gold text-cinema-ink text-sm font-bold hover:bg-cinema-goldLight">
+                  Start a new family
+                </button>
+                <div className="flex gap-2">
                   <input
                     value={groupInput}
                     onChange={(e) => setGroupInput(e.target.value.toUpperCase())}
-                    placeholder="e.g. THOMPSONS"
+                    placeholder="Or enter a code to join"
                     className="flex-1 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 text-sm outline-none focus:border-cinema-gold"
                   />
-                  <button onClick={randomCode} className="px-3 py-2 rounded-lg bg-cinema-panel text-cinema-mutedLight text-xs font-bold hover:bg-cinema-border">
-                    New
-                  </button>
                   <button
                     onClick={async () => {
                       await handleJoin();
                       setShowJoinAnother(false);
                       setGroupInput("");
                     }}
-                    className="px-3 py-2 rounded-lg bg-cinema-gold text-cinema-ink text-sm font-bold hover:bg-cinema-goldLight"
+                    className="px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 text-sm font-bold hover:border-cinema-gold"
                   >
-                    Go
+                    Join
                   </button>
                 </div>
-                <p className="text-[11px] text-cinema-mutedDark">Starting a new family? Tap "New" for a random code. Joining someone? Enter the exact code they shared with you.</p>
+                <p className="text-[11px] text-cinema-mutedDark">Starting a new family gives you a random code you can share and rename however you like. Joining needs the exact code someone gave you.</p>
               </div>
             )}
 
