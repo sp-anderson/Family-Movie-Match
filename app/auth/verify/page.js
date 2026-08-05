@@ -8,11 +8,16 @@ export default function VerifyPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const token = params.get("token");
+    const graduateFrom = params.get("graduateFrom");
+    const mergeFrom = params.get("mergeFrom");
     if (!token) {
       setStatus("error");
       return;
     }
-    signIn("email-link", { token, redirect: true, callbackUrl: "/" }).catch(() => setStatus("error"));
+    let callbackUrl = "/";
+    if (graduateFrom) callbackUrl = `/?graduateFrom=${encodeURIComponent(graduateFrom)}`;
+    else if (mergeFrom) callbackUrl = `/?mergeFrom=${encodeURIComponent(mergeFrom)}`;
+    signIn("email-link", { token, redirect: true, callbackUrl }).catch(() => setStatus("error"));
   }, []);
 
   return (

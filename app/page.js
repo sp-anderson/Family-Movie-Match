@@ -574,6 +574,20 @@ export default function Home() {
   const [familyInviteContact, setFamilyInviteContact] = useState("");
   const [familyInviteSent, setFamilyInviteSent] = useState(false);
   const [memberActionConfirm, setMemberActionConfirm] = useState(null); // { email, name, action: "remove" | "block" }
+  const [addToFamilyFor, setAddToFamilyFor] = useState(null); // local profile email currently showing the add-to-family input
+  const [addToFamilyCode, setAddToFamilyCode] = useState("");
+  const [addToFamilyBusy, setAddToFamilyBusy] = useState(false);
+  const [addToFamilyError, setAddToFamilyError] = useState("");
+  const [graduateInitiateFor, setGraduateInitiateFor] = useState(null); // local profile email currently showing the graduate input
+  const [graduateEmailInput, setGraduateEmailInput] = useState("");
+  const [graduateInitiateBusy, setGraduateInitiateBusy] = useState(false);
+  const [graduateInitiateError, setGraduateInitiateError] = useState("");
+  const [graduateSentFor, setGraduateSentFor] = useState(null);
+  const [mergeInitiateFor, setMergeInitiateFor] = useState(null);
+  const [mergeEmailInput, setMergeEmailInput] = useState("");
+  const [mergeInitiateBusy, setMergeInitiateBusy] = useState(false);
+  const [mergeInitiateError, setMergeInitiateError] = useState("");
+  const [mergeSentFor, setMergeSentFor] = useState(null);
 
   const [manualQuery, setManualQuery] = useState("");
   const [manualResults, setManualResults] = useState([]);
@@ -853,6 +867,13 @@ export default function Home() {
   const [groupInput, setGroupInput] = useState("");
   const [inviteJoinCode, setInviteJoinCode] = useState(null);
   const [inviteJoinBusy, setInviteJoinBusy] = useState(false);
+  const [graduateFromId, setGraduateFromId] = useState(null);
+  const [graduating, setGraduating] = useState(false);
+  const [graduateError, setGraduateError] = useState("");
+  const [mergeFromId, setMergeFromId] = useState(null);
+  const [mergePreview, setMergePreview] = useState(null);
+  const [mergeBusy, setMergeBusy] = useState(false);
+  const [mergeError, setMergeError] = useState("");
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
@@ -861,6 +882,10 @@ export default function Home() {
       setGroupInput(joinCode.toUpperCase());
       setInviteJoinCode(joinCode.toUpperCase());
     }
+    const graduateFrom = params.get("graduateFrom");
+    if (graduateFrom) setGraduateFromId(graduateFrom);
+    const mergeFrom = params.get("mergeFrom");
+    if (mergeFrom) setMergeFromId(mergeFrom);
   }, []);
 
   const [regionInput, setRegionInput] = useState("CA");
@@ -939,6 +964,81 @@ export default function Home() {
       .then((d) => setMyManagedLocalProfiles(d.profile?.managedLocalProfiles || []))
       .catch(() => setMyManagedLocalProfiles([]));
   }, [realEmail]);
+
+  useEffect(() => {
+    if (!graduateFromId || status !== "authenticated" || !realEmail) return;
+    setGraduating(true);
+    (async () => {
+      try {
+        const res = await fetch("/api/graduate/complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fromLocalProfileId: graduateFromId, toEmail: realEmail }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setGraduateError(data.error || "Couldn't finish setting up the account.");
+          setGraduating(false);
+          setGraduateFromId(null);
+          return;
+        }
+        // reload fresh, without the query params — avoids any race between
+        // this migration finishing and the main profile-loading effect
+        // having already fetched (now-stale) data for this email moments earlier
+        window.location.href = window.location.origin + window.location.pathname;
+      } catch {
+        setGraduateError("Couldn't finish setting up the account. Try the link again.");
+        setGraduating(false);
+        setGraduateFromId(null);
+      }
+    })();
+    // eslint-disable-next-line
+  }, [graduateFromId, status, realEmail]);
+
+  useEffect(() => {
+    if (!mergeFromId || status !== "authenticated" || !realEmail) return;
+    fetch(`/api/merge/preview?fromLocalProfileId=${encodeURIComponent(mergeFromId)}&toEmail=${encodeURIComponent(realEmail)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d.found) {
+          setMergeError(d.error || "Couldn't find that profile — it may already have been merged.");
+          setMergeFromId(null);
+        } else {
+          setMergePreview(d);
+        }
+      })
+      .catch(() => {
+        setMergeError("Couldn't load the merge preview. Try the link again.");
+        setMergeFromId(null);
+      });
+    // eslint-disable-next-line
+  }, [mergeFromId, status, realEmail]);
+
+  async function confirmMerge() {
+    setMergeBusy(true);
+    try {
+      const res = await fetch("/api/merge/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fromLocalProfileId: mergeFromId, toEmail: realEmail }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMergeError(data.error || "Couldn't complete the merge.");
+        setMergeBusy(false);
+        return;
+      }
+      window.location.href = window.location.origin + window.location.pathname;
+    } catch {
+      setMergeError("Couldn't complete the merge. Try again.");
+      setMergeBusy(false);
+    }
+  }
+
+  function declineMerge() {
+    setMergeFromId(null);
+    setMergePreview(null);
+  }
 
 
   useEffect(() => {
@@ -1371,6 +1471,75 @@ export default function Home() {
 
     setMyManagedLocalProfiles((prev) => [...prev, { id, name }]);
     return { id, name };
+  }
+
+  async function addLocalProfileToFamily(profileId, profileName, code) {
+    const trimmedCode = code.trim().toUpperCase();
+    if (!trimmedCode) return { error: "Enter a code." };
+
+    // check whether this family has blocked this profile before letting the join happen
+    const roomData = await fetch(`/api/group?code=${encodeURIComponent(trimmedCode)}`).then((r) => r.json()).catch(() => null);
+    if (roomData?.blocked?.includes(profileId)) {
+      return { error: "This family has blocked that profile." };
+    }
+
+    // fetch the local profile's OWN record directly — we're acting as the
+    // parent here, not switched into the kid's identity, so this can't go
+    // through the normal saveProfile helper (which always writes to
+    // whichever profile is currently active)
+    const localProfile = await fetch(`/api/profile?email=${encodeURIComponent(profileId)}`).then((r) => r.json()).then((d) => d.profile);
+    if (!localProfile) return { error: "Couldn't find that profile." };
+
+    const currentGroups = localProfile.groups?.length ? localProfile.groups : localProfile.group ? [{ code: localProfile.group, nickname: localProfile.group }] : [];
+    const alreadyIn = currentGroups.some((g) => g.code === trimmedCode);
+    const nextGroups = alreadyIn ? currentGroups : [...currentGroups, { code: trimmedCode, nickname: trimmedCode }];
+
+    const updatedProfile = { ...localProfile, group: trimmedCode, groups: nextGroups };
+    await fetch("/api/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: profileId, profile: updatedProfile }),
+    });
+
+    const age = calculateAge(localProfile.dob);
+    const role = age >= 18 ? "parent" : "child";
+    await fetch("/api/group", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        code: trimmedCode,
+        type: "member",
+        payload: {
+          email: profileId,
+          name: profileName,
+          role,
+          maxRating: localProfile.isMinor ? localProfile.approvedRating || "G" : null,
+          isLocalProfile: true,
+        },
+      }),
+    });
+
+    return { ok: true };
+  }
+
+  async function initiateGraduation(profileId, profileName, toEmail) {
+    const res = await fetch("/api/graduate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ localProfileId: profileId, localProfileName: profileName, toEmail: toEmail.trim().toLowerCase() }),
+    });
+    const data = await res.json();
+    return res.ok ? { ok: true } : { error: data.error || "Couldn't send that." };
+  }
+
+  async function initiateMerge(profileId, profileName, toEmail) {
+    const res = await fetch("/api/merge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ localProfileId: profileId, localProfileName: profileName, toEmail: toEmail.trim().toLowerCase() }),
+    });
+    const data = await res.json();
+    return res.ok ? { ok: true } : { error: data.error || "Couldn't send that." };
   }
 
   function switchToProfile(id, name) {
@@ -3100,6 +3269,57 @@ export default function Home() {
           </div>
         </div>
       )}
+      {graduating && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+          <p className="text-cinema-gold font-bold">Setting up the new account…</p>
+        </div>
+      )}
+      {mergePreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-6">
+          <div className="bg-cinema-panel border border-cinema-gold rounded-2xl p-5 max-w-sm w-full">
+            <p className="font-extrabold text-cinema-gold mb-2">Merge request</p>
+            <p className="text-sm text-cinema-muted mb-4">
+              A family member wants to merge <strong>{mergePreview.localProfileName}</strong>'s local profile into your account
+              {mergePreview.families.length > 0 && <> (from: {mergePreview.families.join(", ")})</>}.
+            </p>
+            <div className="text-xs text-cinema-mutedLight space-y-1 mb-4">
+              <div>{mergePreview.newVotes} vote{mergePreview.newVotes === 1 ? "" : "s"} will be added</div>
+              <div>{mergePreview.newRatings} rating{mergePreview.newRatings === 1 ? "" : "s"} will be added</div>
+              {mergePreview.conflictVotes > 0 && <div className="text-cinema-orangeLight">{mergePreview.conflictVotes} vote{mergePreview.conflictVotes === 1 ? "" : "s"} conflict — your existing vote stays</div>}
+              {mergePreview.conflictRatings > 0 && <div className="text-cinema-orangeLight">{mergePreview.conflictRatings} rating{mergePreview.conflictRatings === 1 ? "" : "s"} conflict — the most recent one wins</div>}
+            </div>
+            {mergeError && <p className="text-xs text-cinema-orangeLight mb-3">{mergeError}</p>}
+            <div className="flex gap-2">
+              <button onClick={confirmMerge} disabled={mergeBusy} className="flex-1 py-2 rounded-lg bg-cinema-gold text-cinema-ink font-extrabold hover:bg-cinema-goldLight disabled:opacity-50">
+                {mergeBusy ? "Merging…" : "Confirm merge"}
+              </button>
+              <button onClick={declineMerge} disabled={mergeBusy} className="flex-1 py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-mutedLight font-bold">
+                Decline
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {mergeError && !mergePreview && (
+        <div className="fixed top-4 left-4 right-4 z-50 max-w-sm mx-auto">
+          <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-cinema-orange/95 border border-cinema-orange text-white text-sm shadow-2xl">
+            <span className="flex-1">{mergeError}</span>
+            <button onClick={() => setMergeError("")} className="flex-shrink-0 font-bold hover:opacity-70" aria-label="Dismiss">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+      {graduateError && (
+        <div className="fixed top-4 left-4 right-4 z-50 max-w-sm mx-auto">
+          <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-cinema-orange/95 border border-cinema-orange text-white text-sm shadow-2xl">
+            <span className="flex-1">{graduateError}</span>
+            <button onClick={() => setGraduateError("")} className="flex-shrink-0 font-bold hover:opacity-70" aria-label="Dismiss">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
       {celebration && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-6"
@@ -4418,6 +4638,138 @@ export default function Home() {
                 <div className="flex flex-wrap gap-1 mb-1">{(m.services || []).map((sid) => <span key={sid} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{providerNameMap[sid] || "Unknown"}</span>)}</div>
                 <div className="flex flex-wrap gap-1 mb-1">{(m.genres || []).map((gid) => <span key={gid} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-gold/20 text-cinema-gold font-bold">{GENRES.find((g) => g.id === gid)?.name}</span>)}</div>
                 {m.favorites?.length > 0 && <div className="text-xs text-cinema-muted mt-1">Favorites: {m.favorites.join(", ")}</div>}
+                {myMember?.role === "parent" && m.email !== email && m.isLocalProfile && (
+                  <div className="mt-2 pt-2 border-t border-cinema-border">
+                    {graduateSentFor === m.email ? (
+                      <p className="text-xs text-cinema-green font-bold">Email sent — once they click it, everything moves over to their own account automatically.</p>
+                    ) : graduateInitiateFor === m.email ? (
+                      <div className="flex gap-2 items-center flex-wrap">
+                        <input
+                          value={graduateEmailInput}
+                          onChange={(e) => {
+                            setGraduateEmailInput(e.target.value);
+                            setGraduateInitiateError("");
+                          }}
+                          placeholder="Their email address"
+                          className="px-2 py-1 rounded-lg bg-cinema-bg border border-cinema-border text-stone-50 text-xs outline-none focus:border-cinema-gold"
+                        />
+                        <button
+                          disabled={graduateInitiateBusy}
+                          onClick={async () => {
+                            setGraduateInitiateBusy(true);
+                            const result = await initiateGraduation(m.email, m.name, graduateEmailInput);
+                            setGraduateInitiateBusy(false);
+                            if (result.error) {
+                              setGraduateInitiateError(result.error);
+                            } else {
+                              setGraduateInitiateFor(null);
+                              setGraduateEmailInput("");
+                              setGraduateSentFor(m.email);
+                            }
+                          }}
+                          className="text-xs font-bold px-2 py-1 rounded-lg bg-cinema-gold text-cinema-ink hover:bg-cinema-goldLight disabled:opacity-50"
+                        >
+                          {graduateInitiateBusy ? "…" : "Send"}
+                        </button>
+                        <button onClick={() => { setGraduateInitiateFor(null); setGraduateInitiateError(""); }} className="text-xs font-bold text-cinema-mutedDark">
+                          Cancel
+                        </button>
+                        {graduateInitiateError && <span className="text-xs text-cinema-orangeLight w-full">{graduateInitiateError}</span>}
+                      </div>
+                    ) : (
+                      <button onClick={() => setGraduateInitiateFor(m.email)} className="text-xs font-bold text-cinema-gold hover:underline">
+                        Graduate {m.name} to their own account
+                      </button>
+                    )}
+                  </div>
+                )}
+                {myMember?.role === "parent" && m.email !== email && m.isLocalProfile && (
+                  <div className="mt-2 pt-2 border-t border-cinema-border">
+                    {mergeSentFor === m.email ? (
+                      <p className="text-xs text-cinema-green font-bold">Request sent — nothing merges until they review and confirm it themselves.</p>
+                    ) : mergeInitiateFor === m.email ? (
+                      <div className="flex gap-2 items-center flex-wrap">
+                        <input
+                          value={mergeEmailInput}
+                          onChange={(e) => {
+                            setMergeEmailInput(e.target.value);
+                            setMergeInitiateError("");
+                          }}
+                          placeholder="Their existing account email"
+                          className="px-2 py-1 rounded-lg bg-cinema-bg border border-cinema-border text-stone-50 text-xs outline-none focus:border-cinema-gold"
+                        />
+                        <button
+                          disabled={mergeInitiateBusy}
+                          onClick={async () => {
+                            setMergeInitiateBusy(true);
+                            const result = await initiateMerge(m.email, m.name, mergeEmailInput);
+                            setMergeInitiateBusy(false);
+                            if (result.error) {
+                              setMergeInitiateError(result.error);
+                            } else {
+                              setMergeInitiateFor(null);
+                              setMergeEmailInput("");
+                              setMergeSentFor(m.email);
+                            }
+                          }}
+                          className="text-xs font-bold px-2 py-1 rounded-lg bg-cinema-gold text-cinema-ink hover:bg-cinema-goldLight disabled:opacity-50"
+                        >
+                          {mergeInitiateBusy ? "…" : "Send"}
+                        </button>
+                        <button onClick={() => { setMergeInitiateFor(null); setMergeInitiateError(""); }} className="text-xs font-bold text-cinema-mutedDark">
+                          Cancel
+                        </button>
+                        {mergeInitiateError && <span className="text-xs text-cinema-orangeLight w-full">{mergeInitiateError}</span>}
+                      </div>
+                    ) : (
+                      <button onClick={() => setMergeInitiateFor(m.email)} className="text-xs font-bold text-cinema-gold hover:underline">
+                        Merge {m.name} into an existing account
+                      </button>
+                    )}
+                  </div>
+                )}
+                {myMember?.role === "parent" && m.email !== email && m.isLocalProfile && (
+                  <div className="mt-2 pt-2 border-t border-cinema-border">
+                    {addToFamilyFor === m.email ? (
+                      <div className="flex gap-2 items-center flex-wrap">
+                        <input
+                          value={addToFamilyCode}
+                          onChange={(e) => {
+                            setAddToFamilyCode(e.target.value.toUpperCase());
+                            setAddToFamilyError("");
+                          }}
+                          placeholder="Family code"
+                          className="px-2 py-1 rounded-lg bg-cinema-bg border border-cinema-border text-stone-50 text-xs outline-none focus:border-cinema-gold"
+                        />
+                        <button
+                          disabled={addToFamilyBusy}
+                          onClick={async () => {
+                            setAddToFamilyBusy(true);
+                            const result = await addLocalProfileToFamily(m.email, m.name, addToFamilyCode);
+                            setAddToFamilyBusy(false);
+                            if (result.error) {
+                              setAddToFamilyError(result.error);
+                            } else {
+                              setAddToFamilyFor(null);
+                              setAddToFamilyCode("");
+                            }
+                          }}
+                          className="text-xs font-bold px-2 py-1 rounded-lg bg-cinema-gold text-cinema-ink hover:bg-cinema-goldLight disabled:opacity-50"
+                        >
+                          {addToFamilyBusy ? "…" : "Add"}
+                        </button>
+                        <button onClick={() => { setAddToFamilyFor(null); setAddToFamilyError(""); }} className="text-xs font-bold text-cinema-mutedDark">
+                          Cancel
+                        </button>
+                        {addToFamilyError && <span className="text-xs text-cinema-orangeLight w-full">{addToFamilyError}</span>}
+                      </div>
+                    ) : (
+                      <button onClick={() => setAddToFamilyFor(m.email)} className="text-xs font-bold text-cinema-gold hover:underline">
+                        + Add {m.name} to another family
+                      </button>
+                    )}
+                  </div>
+                )}
                 {myMember?.role === "parent" && m.email !== email && (
                   <div className="mt-2 pt-2 border-t border-cinema-border flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-bold text-cinema-muted">Role:</span>
