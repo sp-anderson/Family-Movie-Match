@@ -183,7 +183,7 @@ function ProviderRow({ movieId, region, inTheaters }) {
   );
 }
 
-function FilterSortBar({ sort, setSort, genreFilter, setGenreFilter, castQuery, setCastQuery, sortOptions, availabilityFilter, setAvailabilityFilter }) {
+function FilterSortBar({ sort, setSort, genreFilter, setGenreFilter, sortOptions, availabilityFilter, setAvailabilityFilter }) {
   function toggleGenre(id) {
     setGenreFilter(genreFilter.includes(id) ? genreFilter.filter((g) => g !== id) : [...genreFilter, id]);
   }
@@ -233,12 +233,6 @@ function FilterSortBar({ sort, setSort, genreFilter, setGenreFilter, castQuery, 
           Streaming
         </button>
       </div>
-      <input
-        value={castQuery}
-        onChange={(e) => setCastQuery(e.target.value)}
-        placeholder="Filter by cast member…"
-        className="w-full px-3 py-1.5 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 text-sm outline-none focus:border-cinema-gold"
-      />
       <div className="flex flex-wrap gap-1.5">
         {GENRES.map((g) => (
           <button
@@ -846,13 +840,14 @@ export default function Home() {
 
   const [matchesSort, setMatchesSort] = useState({ key: "", dir: "desc" });
   const [matchesGenreFilter, setMatchesGenreFilter] = useState([]);
-  const [matchesCastQuery, setMatchesCastQuery] = useState("");
+  const [matchesSearch, setMatchesSearch] = useState("");
   const [matchesAvailabilityFilter, setMatchesAvailabilityFilter] = useState([]);
+  const [showMatchesFilters, setShowMatchesFilters] = useState(false);
 
   const [historySort, setHistorySort] = useState({ key: "", dir: "desc" });
   const [historyGenreFilter, setHistoryGenreFilter] = useState([]);
-  const [historyCastQuery, setHistoryCastQuery] = useState("");
   const [historyAvailabilityFilter, setHistoryAvailabilityFilter] = useState([]);
+  const [showHistoryFilters, setShowHistoryFilters] = useState(false);
 
   const [error, setError] = useState("");
   useEffect(() => {
@@ -2353,6 +2348,14 @@ export default function Home() {
     return cast.some((name) => name.toLowerCase().includes(q));
   }
 
+  function passesTitleOrCastFilter(movie, query) {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    if (movie.title.toLowerCase().includes(q)) return true;
+    const cast = detailsCache[movie.id]?.cast;
+    return cast ? cast.some((name) => name.toLowerCase().includes(q)) : false;
+  }
+
   function sortMovies(list, sort) {
     if (!sort.key) return list;
     const arr = [...list];
@@ -2717,26 +2720,26 @@ export default function Home() {
     return ids;
   }, [pool, votes, members]);
 
-  const mySoloSearched = myYes.filter((m) => !fullFamilyMatchIds.has(m.id) && m.title.toLowerCase().includes(historySearch.trim().toLowerCase()));
+  const mySoloSearched = myYes.filter((m) => !fullFamilyMatchIds.has(m.id) && passesTitleOrCastFilter(m, historySearch));
 
-  useCastFetch(readyToWatch, matchesCastQuery);
+  useCastFetch(readyToWatch, matchesSearch);
 
   const visibleMatches = sortMovies(
-    readyToWatch.filter((m) => passesGenreFilter(m, matchesGenreFilter) && passesCastFilter(m, matchesCastQuery) && passesAvailabilityFilter(m, matchesAvailabilityFilter)),
+    readyToWatch.filter((m) => passesGenreFilter(m, matchesGenreFilter) && passesTitleOrCastFilter(m, matchesSearch) && passesAvailabilityFilter(m, matchesAvailabilityFilter)),
     matchesSort
   );
   const { all: visibleMatchesAll, some: visibleMatchesSome } = splitByGenreMatch(visibleMatches, matchesGenreFilter);
 
   const visibleSoloWatch = sortMovies(
-    mySoloSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery) && passesAvailabilityFilter(m, historyAvailabilityFilter)),
+    mySoloSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesAvailabilityFilter(m, historyAvailabilityFilter)),
     historySort
   );
   const { all: visibleSoloAll, some: visibleSoloSome } = splitByGenreMatch(visibleSoloWatch, historyGenreFilter);
 
-  const mySeenSearched = myWatched.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase()));
+  const mySeenSearched = myWatched.filter((m) => passesTitleOrCastFilter(m, historySearch));
   const visibleSeen = (() => {
     const sorted = sortMovies(
-      mySeenSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery) && passesAvailabilityFilter(m, historyAvailabilityFilter)),
+      mySeenSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesAvailabilityFilter(m, historyAvailabilityFilter)),
       historySort
     );
     if (historySort.key) return sorted; // an explicit sort is chosen — respect it as-is, don't also reorder by rating
@@ -2745,28 +2748,28 @@ export default function Home() {
     return [...unrated, ...rated];
   })();
 
-  const myYesInVotesSearched = myYes.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase()));
+  const myYesInVotesSearched = myYes.filter((m) => passesTitleOrCastFilter(m, historySearch));
   const visibleYesInVotes = sortMovies(
-    myYesInVotesSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery) && passesAvailabilityFilter(m, historyAvailabilityFilter)),
+    myYesInVotesSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesAvailabilityFilter(m, historyAvailabilityFilter)),
     historySort
   );
 
-  const myNoInVotesSearched = myNo.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase()));
+  const myNoInVotesSearched = myNo.filter((m) => passesTitleOrCastFilter(m, historySearch));
   const visibleNoInVotes = sortMovies(
-    myNoInVotesSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery) && passesAvailabilityFilter(m, historyAvailabilityFilter)),
+    myNoInVotesSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesAvailabilityFilter(m, historyAvailabilityFilter)),
     historySort
   );
 
   const reviewLaterMovies = pool
     ? skippedOrder.map((id) => pool.movies.find((m) => m.id === id)).filter(Boolean).filter((m) => !(votes[m.id] || {})[email])
     : [];
-  const reviewLaterSearched = reviewLaterMovies.filter((m) => m.title.toLowerCase().includes(historySearch.trim().toLowerCase()));
+  const reviewLaterSearched = reviewLaterMovies.filter((m) => passesTitleOrCastFilter(m, historySearch));
   const visibleReviewLater = sortMovies(
-    reviewLaterSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesCastFilter(m, historyCastQuery) && passesAvailabilityFilter(m, historyAvailabilityFilter)),
+    reviewLaterSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesAvailabilityFilter(m, historyAvailabilityFilter)),
     historySort
   );
 
-  useCastFetch(myWatched.concat(myYes).concat(myNo).concat(reviewLaterMovies), historyCastQuery);
+  useCastFetch(myWatched.concat(myYes).concat(myNo).concat(reviewLaterMovies), historySearch);
 
   function matchesFor(emailList) {
     if (!pool) return [];
@@ -4125,21 +4128,35 @@ export default function Home() {
             )}
 
             {readyToWatch.length > 0 && (
-              <FilterSortBar
-                sort={matchesSort}
-                setSort={setMatchesSort}
-                genreFilter={matchesGenreFilter}
-                setGenreFilter={setMatchesGenreFilter}
-                castQuery={matchesCastQuery}
-                setCastQuery={setMatchesCastQuery}
-                availabilityFilter={matchesAvailabilityFilter}
-                setAvailabilityFilter={setMatchesAvailabilityFilter}
-                sortOptions={["year", "score", "title"]}
-              />
+              <>
+                <input
+                  value={matchesSearch}
+                  onChange={(e) => setMatchesSearch(e.target.value)}
+                  placeholder="Search titles or cast"
+                  className="w-full px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold mb-2"
+                />
+                <button
+                  onClick={() => setShowMatchesFilters((s) => !s)}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 mb-3 rounded-lg bg-cinema-panel border border-cinema-border text-cinema-mutedLight text-xs font-bold hover:border-cinema-gold"
+                >
+                  Filters and sort <ChevronDown className={"w-3.5 h-3.5 transition-transform " + (showMatchesFilters ? "rotate-180" : "")} />
+                </button>
+                {showMatchesFilters && (
+                  <FilterSortBar
+                    sort={matchesSort}
+                    setSort={setMatchesSort}
+                    genreFilter={matchesGenreFilter}
+                    setGenreFilter={setMatchesGenreFilter}
+                    availabilityFilter={matchesAvailabilityFilter}
+                    setAvailabilityFilter={setMatchesAvailabilityFilter}
+                    sortOptions={["year", "score", "title"]}
+                  />
+                )}
+              </>
             )}
 
             {consideredEmails.length === 0 && otherMembers.length > 0 && (
-              <p className="text-cinema-muted text-sm text-center py-6">Select at least one family member above to see matches. Looking for your own personal list? Check My Votes.</p>
+              <p className="text-cinema-muted text-sm text-center py-6">Select at least one family member above to see matches. Looking for your own personal list? Check My Movies.</p>
             )}
 
             {consideredEmails.length > 0 && readyToWatch.length === 0 && (
@@ -4216,21 +4233,27 @@ export default function Home() {
             <input
               value={historySearch}
               onChange={(e) => setHistorySearch(e.target.value)}
-              placeholder="Search your votes…"
-              className="w-full px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold mb-4"
+              placeholder="Search titles or cast"
+              className="w-full px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold mb-2"
             />
 
-            <FilterSortBar
-              sort={historySort}
-              setSort={setHistorySort}
-              genreFilter={historyGenreFilter}
-              setGenreFilter={setHistoryGenreFilter}
-              castQuery={historyCastQuery}
-              setCastQuery={setHistoryCastQuery}
-              availabilityFilter={historyAvailabilityFilter}
-              setAvailabilityFilter={setHistoryAvailabilityFilter}
-              sortOptions={["year", "score", "title"]}
-            />
+            <button
+              onClick={() => setShowHistoryFilters((s) => !s)}
+              className="w-full flex items-center justify-center gap-1.5 py-2 mb-3 rounded-lg bg-cinema-panel border border-cinema-border text-cinema-mutedLight text-xs font-bold hover:border-cinema-gold"
+            >
+              Filters and sort <ChevronDown className={"w-3.5 h-3.5 transition-transform " + (showHistoryFilters ? "rotate-180" : "")} />
+            </button>
+            {showHistoryFilters && (
+              <FilterSortBar
+                sort={historySort}
+                setSort={setHistorySort}
+                genreFilter={historyGenreFilter}
+                setGenreFilter={setHistoryGenreFilter}
+                availabilityFilter={historyAvailabilityFilter}
+                setAvailabilityFilter={setHistoryAvailabilityFilter}
+                sortOptions={["year", "score", "title"]}
+              />
+            )}
 
             {historyStatusFilter === "solo" && (
               <>
