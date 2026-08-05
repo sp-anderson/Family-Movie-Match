@@ -1234,6 +1234,7 @@ export default function Home() {
     const data = await res.json();
     setMembers(data.members || []);
     setFamilyMembers(data.members || []);
+    await cleanUpManagedLocalProfile(email);
     setMemberActionConfirm(null);
   }
 
@@ -1246,7 +1247,16 @@ export default function Home() {
     const data = await res.json();
     setMembers(data.members || []);
     setFamilyMembers(data.members || []);
+    await cleanUpManagedLocalProfile(email);
     setMemberActionConfirm(null);
+  }
+
+  async function cleanUpManagedLocalProfile(profileId) {
+    if (!(profile?.managedLocalProfiles || []).some((p) => p.id === profileId)) return;
+    const next = profile.managedLocalProfiles.filter((p) => p.id !== profileId);
+    const merged = await saveProfile({ managedLocalProfiles: next });
+    setProfile(merged);
+    setMyManagedLocalProfiles(next);
   }
 
   const [pendingConsent, setPendingConsent] = useState({}); // email -> record (only pending ones)
@@ -2859,16 +2869,24 @@ export default function Home() {
 
                   {/* profiles I manage directly, from my own account — works across any device */}
                   {myManagedLocalProfiles.map((p) => (
-                    <button
+                    <div
                       key={p.id}
-                      onClick={() => { switchToProfile(p.id, p.name); }}
-                      className={"w-full flex items-center gap-2 p-2 rounded-lg border text-left " + (activeProfileId === p.id ? "border-cinema-gold bg-cinema-gold/10" : "border-cinema-border bg-cinema-bg")}
+                      className={"w-full flex items-center gap-2 p-2 rounded-lg border " + (activeProfileId === p.id ? "border-cinema-gold bg-cinema-gold/10" : "border-cinema-border bg-cinema-bg")}
                     >
-                      <div className={`w-7 h-7 rounded-full ${avatarColor(p.id)} flex items-center justify-center text-cinema-ink font-extrabold text-xs`}>
-                        {p.name?.[0]?.toUpperCase()}
-                      </div>
-                      <span className="text-sm font-bold">{p.name}</span>
-                    </button>
+                      <button onClick={() => switchToProfile(p.id, p.name)} className="flex-1 flex items-center gap-2 text-left">
+                        <div className={`w-7 h-7 rounded-full ${avatarColor(p.id)} flex items-center justify-center text-cinema-ink font-extrabold text-xs`}>
+                          {p.name?.[0]?.toUpperCase()}
+                        </div>
+                        <span className="text-sm font-bold">{p.name}</span>
+                      </button>
+                      <button
+                        onClick={() => cleanUpManagedLocalProfile(p.id)}
+                        className="text-cinema-mutedDark hover:text-cinema-orangeLight flex-shrink-0 p-1"
+                        title="Remove from this list (doesn't touch the profile itself if it's still in a family)"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   ))}
 
                   {/* local profiles in the current family managed by a co-parent, not yet on my own list */}
@@ -3047,7 +3065,7 @@ export default function Home() {
               />
             )}
             <div className="text-xl font-extrabold text-stone-50">{celebration.title}</div>
-            <div className="text-sm text-cinema-muted mt-1">Everyone in the family said yes 🎉</div>
+            <div className="text-sm text-cinema-muted mt-1">Everyone in the family said yes</div>
           </div>
         </div>
       )}
