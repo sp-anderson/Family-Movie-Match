@@ -1833,8 +1833,7 @@ export default function Home() {
     return spotlight.filter((s) => s.movieId === movieId && s.byEmail !== email);
   }
 
-  function movieNightYesVoters(movieId) {
-    if (roomMeta?.type !== "movie-night") return [];
+  function otherMemberYesVoters(movieId) {
     return members
       .filter((m) => m.email !== email && (votes[movieId] || {})[m.email] === "yes")
       .map((m) => ({ byEmail: m.email, byName: m.name }));
@@ -2050,11 +2049,11 @@ export default function Home() {
     } else {
       movies = filteredMovies;
     }
-    if (roomMeta?.type === "movie-night") {
-      // the whole point of a Movie Night is finding something to watch
-      // together right now — a movie someone else already said yes to
-      // jumps to the very front, ahead of personal taste scoring, since a
-      // fast match beats a perfectly-tailored one here
+    // a movie someone else already said yes to jumps to the very front,
+    // ahead of personal taste scoring — a fast, agreed-upon pick beats a
+    // perfectly-tailored one, whether that's an ad-hoc Movie Night or your
+    // everyday family stack
+    {
       const yesFromOthers = [];
       const rest = [];
       movies.forEach((m) => {
@@ -2074,7 +2073,7 @@ export default function Home() {
   }, [filteredMovies, committedOrder, ratings, skippedOrder, roomMeta, votes, email]);
   const currentMovie = deck[0];
   const currentMovieNudges = currentMovie
-    ? [...nudgeRecommenders(currentMovie.id), ...movieNightYesVoters(currentMovie.id)].filter(
+    ? [...nudgeRecommenders(currentMovie.id), ...otherMemberYesVoters(currentMovie.id)].filter(
         (n, idx, arr) => arr.findIndex((x) => x.byEmail === n.byEmail) === idx
       )
     : [];
@@ -2869,24 +2868,16 @@ export default function Home() {
 
                   {/* profiles I manage directly, from my own account — works across any device */}
                   {myManagedLocalProfiles.map((p) => (
-                    <div
+                    <button
                       key={p.id}
-                      className={"w-full flex items-center gap-2 p-2 rounded-lg border " + (activeProfileId === p.id ? "border-cinema-gold bg-cinema-gold/10" : "border-cinema-border bg-cinema-bg")}
+                      onClick={() => switchToProfile(p.id, p.name)}
+                      className={"w-full flex items-center gap-2 p-2 rounded-lg border text-left " + (activeProfileId === p.id ? "border-cinema-gold bg-cinema-gold/10" : "border-cinema-border bg-cinema-bg")}
                     >
-                      <button onClick={() => switchToProfile(p.id, p.name)} className="flex-1 flex items-center gap-2 text-left">
-                        <div className={`w-7 h-7 rounded-full ${avatarColor(p.id)} flex items-center justify-center text-cinema-ink font-extrabold text-xs`}>
-                          {p.name?.[0]?.toUpperCase()}
-                        </div>
-                        <span className="text-sm font-bold">{p.name}</span>
-                      </button>
-                      <button
-                        onClick={() => cleanUpManagedLocalProfile(p.id)}
-                        className="text-cinema-mutedDark hover:text-cinema-orangeLight flex-shrink-0 p-1"
-                        title="Remove from this list (doesn't touch the profile itself if it's still in a family)"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                      <div className={`w-7 h-7 rounded-full ${avatarColor(p.id)} flex items-center justify-center text-cinema-ink font-extrabold text-xs`}>
+                        {p.name?.[0]?.toUpperCase()}
+                      </div>
+                      <span className="text-sm font-bold">{p.name}</span>
+                    </button>
                   ))}
 
                   {/* local profiles in the current family managed by a co-parent, not yet on my own list */}
