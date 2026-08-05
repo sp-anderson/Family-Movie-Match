@@ -3560,7 +3560,7 @@ export default function Home() {
             </div>
             <div className="mb-5">
               <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Specific things to avoid</div>
-              <p className="text-[11px] text-cinema-mutedDark mb-2">e.g. "superhero" — more specific than a genre. If someone else in the family already said yes to one, it'll still show up for you.</p>
+              <p className="text-[11px] text-cinema-mutedDark mb-2">More specific than a genre, like "superhero." Someone else's yes still overrides this.</p>
               {excludedKeywordsInput.length > 0 && (
                 <div className="flex flex-wrap gap-2 mb-2">
                   {excludedKeywordsInput.map((k) => (
