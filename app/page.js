@@ -107,15 +107,15 @@ function TheaterBadge() {
   );
 }
 
-function Chip({ active, onClick, children }) {
+function Chip({ active, onClick, children, variant = "gold" }) {
+  const activeClass = variant === "orange" ? "bg-cinema-orange border-cinema-orange text-cinema-ink" : "bg-cinema-gold border-cinema-gold text-cinema-ink";
+  const inactiveHover = variant === "orange" ? "hover:border-cinema-orange/60" : "hover:border-cinema-gold/60";
   return (
     <button
       onClick={onClick}
       className={
         "px-3 py-1.5 rounded-full text-sm font-bold border-2 transition-colors " +
-        (active
-          ? "bg-cinema-gold border-cinema-gold text-cinema-ink"
-          : "bg-transparent border-cinema-border text-cinema-mutedLight hover:border-cinema-gold/60")
+        (active ? activeClass : "bg-transparent border-cinema-border text-cinema-mutedLight " + inactiveHover)
       }
     >
       {children}
@@ -895,6 +895,11 @@ export default function Home() {
   }, [celebration]);
   const [servicesInput, setServicesInput] = useState([]);
   const [genresInput, setGenresInput] = useState([]);
+  const [excludedGenresInput, setExcludedGenresInput] = useState([]);
+  const [excludedKeywordsInput, setExcludedKeywordsInput] = useState([]); // [{id, name}]
+  const [keywordSearchQuery, setKeywordSearchQuery] = useState("");
+  const [keywordSearchResults, setKeywordSearchResults] = useState([]);
+  const [keywordSearching, setKeywordSearching] = useState(false);
   const [favInput, setFavInput] = useState("");
   const [favorites, setFavorites] = useState([]);
   const [favSuggestions, setFavSuggestions] = useState([]);
@@ -1119,6 +1124,8 @@ export default function Home() {
       setScreen("setup");
       setServicesInput(profile?.services || []);
       setGenresInput(profile?.genres || []);
+      setExcludedGenresInput(profile?.excludedGenres || []);
+      setExcludedKeywordsInput(profile?.excludedKeywords || []);
       setFavorites(profile?.favorites || []);
     } catch {
       setNightError("Couldn't start a Movie Night — try again.");
@@ -1151,6 +1158,8 @@ export default function Home() {
       setShowNightPanel(false);
       setServicesInput(profile?.services || []);
       setGenresInput(profile?.genres || []);
+      setExcludedGenresInput(profile?.excludedGenres || []);
+      setExcludedKeywordsInput(profile?.excludedKeywords || []);
       setFavorites(profile?.favorites || []);
       setScreen("setup");
     } catch {
@@ -1169,6 +1178,8 @@ export default function Home() {
     setRoleInput(profile.role || "child");
     setServicesInput(profile.services || []);
     setGenresInput(profile.genres || []);
+    setExcludedGenresInput(profile.excludedGenres || []);
+    setExcludedKeywordsInput(profile.excludedKeywords || []);
     setFavorites(profile.favorites || []);
     setShowNightPanel(false);
     setScreen("swipe");
@@ -1433,6 +1444,8 @@ export default function Home() {
       setRoleInput(merged?.dob && calculateAge(merged.dob) >= 18 ? "parent" : "child");
       setServicesInput(profile?.services || []);
       setGenresInput(profile?.genres || []);
+      setExcludedGenresInput(profile?.excludedGenres || []);
+      setExcludedKeywordsInput(profile?.excludedKeywords || []);
       setFavorites(profile?.favorites || []);
       setScreen("setup");
       return;
@@ -1559,6 +1572,35 @@ export default function Home() {
   function toggleGenre(id) {
     setGenresInput((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   }
+  function toggleExcludedGenre(id) {
+    setExcludedGenresInput((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  }
+
+  async function runKeywordSearch() {
+    if (!keywordSearchQuery.trim()) return;
+    setKeywordSearching(true);
+    try {
+      const res = await fetch(`/api/keyword-search?query=${encodeURIComponent(keywordSearchQuery.trim())}`);
+      const data = await res.json();
+      setKeywordSearchResults(data.results || []);
+    } catch {
+      setKeywordSearchResults([]);
+    }
+    setKeywordSearching(false);
+  }
+
+  function addExcludedKeyword(kw) {
+    if (!excludedKeywordsInput.some((k) => k.id === kw.id)) {
+      setExcludedKeywordsInput((prev) => [...prev, kw]);
+    }
+    setKeywordSearchQuery("");
+    setKeywordSearchResults([]);
+  }
+
+  function removeExcludedKeyword(id) {
+    setExcludedKeywordsInput((prev) => prev.filter((k) => k.id !== id));
+  }
+
   useEffect(() => {
     const q = favInput.trim();
     if (q.length < 2) {
@@ -1608,7 +1650,7 @@ export default function Home() {
         setError(`You need to be ${PARENT_ROLE_MIN_AGE}+ to be set as a parent — an existing parent can promote you from the Family tab if they choose to.`);
         return;
       }
-      await saveProfile({ region: regionInput, role: finalRole, services: servicesInput, genres: genresInput, favorites, wantsTheaters: wantsTheatersInput });
+      await saveProfile({ region: regionInput, role: finalRole, services: servicesInput, genres: genresInput, excludedGenres: excludedGenresInput, excludedKeywords: excludedKeywordsInput, favorites, wantsTheaters: wantsTheatersInput });
       await saveMember(activeRoomCode, { name: displayName, email, role: finalRole, maxRating: finalMaxRating, services: servicesInput, genres: genresInput, favorites, wantsTheaters: wantsTheatersInput });
       setFamilyMembers((prev) => {
         const rec = { name: displayName, email, role: finalRole, maxRating: finalMaxRating, services: servicesInput, genres: genresInput, favorites, wantsTheaters: wantsTheatersInput };
@@ -1965,8 +2007,26 @@ export default function Home() {
         return cert !== "" && ratingRank(cert) <= maxRank;
       });
     }
+    const excludedGenres = profile?.excludedGenres || [];
+    const excludedKeywordIds = (profile?.excludedKeywords || []).map((k) => k.id);
+    if (excludedGenres.length || excludedKeywordIds.length) {
+      movies = movies.filter((m) => {
+        // same bypass as genre-include: if someone else already said yes,
+        // let it through anyway so a match still stays possible
+        const familyMateSaidYes = Object.entries(votes[m.id] || {}).some(([memberEmail, choice]) => memberEmail !== email && choice === "yes");
+        if (familyMateSaidYes) return true;
+        if (excludedGenres.length && (m.genre_ids || []).some((g) => excludedGenres.includes(g))) return false;
+        if (excludedKeywordIds.length) {
+          const credits = detailsCache[m.id];
+          // can't check keywords we haven't fetched yet — let it through
+          // rather than hiding everything until prefetch catches up
+          if (credits && (credits.keywordIds || []).some((k) => excludedKeywordIds.includes(k))) return false;
+        }
+        return true;
+      });
+    }
     return movies;
-  }, [pool, myVotedIds, myMaxRating, certifications, votes, email, spotlight, reconsidered, profile?.genres]);
+  }, [pool, myVotedIds, myMaxRating, certifications, votes, email, spotlight, reconsidered, profile?.genres, profile?.excludedGenres, profile?.excludedKeywords]);
 
   // personalized ordering, built up in fully-enriched batches of 20 instead
   // of scoring the whole pool at once. Every movie in a batch gets its
@@ -3493,6 +3553,52 @@ export default function Home() {
             <div className="mb-5">
               <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Genres you like</div>
               <div className="flex flex-wrap gap-2">{GENRES.map((g) => <Chip key={g.id} active={genresInput.includes(g.id)} onClick={() => toggleGenre(g.id)}>{g.name}</Chip>)}</div>
+            </div>
+            <div className="mb-5">
+              <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Genres to avoid</div>
+              <div className="flex flex-wrap gap-2">{GENRES.map((g) => <Chip key={g.id} variant="orange" active={excludedGenresInput.includes(g.id)} onClick={() => toggleExcludedGenre(g.id)}>{g.name}</Chip>)}</div>
+            </div>
+            <div className="mb-5">
+              <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Specific things to avoid</div>
+              <p className="text-[11px] text-cinema-mutedDark mb-2">e.g. "superhero" — more specific than a genre. If someone else in the family already said yes to one, it'll still show up for you.</p>
+              {excludedKeywordsInput.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {excludedKeywordsInput.map((k) => (
+                    <button
+                      key={k.id}
+                      onClick={() => removeExcludedKeyword(k.id)}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-bold border-2 bg-cinema-orange border-cinema-orange text-cinema-ink"
+                    >
+                      {k.name} <X className="w-3 h-3" />
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-2">
+                <input
+                  value={keywordSearchQuery}
+                  onChange={(e) => setKeywordSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && runKeywordSearch()}
+                  placeholder="Search for something to avoid…"
+                  className="flex-1 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 text-sm outline-none focus:border-cinema-gold"
+                />
+                <button onClick={runKeywordSearch} disabled={keywordSearching} className="px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-cinema-mutedLight text-xs font-bold hover:border-cinema-gold disabled:opacity-50">
+                  {keywordSearching ? "…" : "Search"}
+                </button>
+              </div>
+              {keywordSearchResults.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {keywordSearchResults.map((k) => (
+                    <button
+                      key={k.id}
+                      onClick={() => addExcludedKeyword(k)}
+                      className="px-3 py-1.5 rounded-full text-sm font-bold border-2 border-cinema-border text-cinema-mutedLight hover:border-cinema-orange hover:text-cinema-orangeLight"
+                    >
+                      + {k.name}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             {roomMeta?.type !== "movie-night" && !isPendingMinor && (
             <div className="mb-6">
