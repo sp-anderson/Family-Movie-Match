@@ -364,19 +364,25 @@ function DetailsRow({ movie, certifications, setCertifications }) {
   const cert = certifications ? certifications[movie.id] : undefined;
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] font-bold text-cinema-mutedDark mt-1">
-      {year && <span>{year}</span>}
-      {cert ? (
-        <span className="px-1.5 py-0.5 rounded border border-cinema-mutedDark text-cinema-mutedDark">{cert}</span>
+    <div className="mt-1">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] font-bold text-cinema-mutedDark">
+        {year && <span>{year}</span>}
+        {cert ? (
+          <span className="px-1.5 py-0.5 rounded border border-cinema-mutedDark text-cinema-mutedDark">{cert}</span>
+        ) : null}
+        {rating && (
+          <span className="inline-flex items-center gap-1">
+            <Star className="w-3 h-3 text-cinema-gold" fill="currentColor" /> {rating}/10
+          </span>
+        )}
+        {details?.runtime ? <span>{details.runtime} min</span> : null}
+      </div>
+      {details?.directorNames?.length ? (
+        <div className="text-[11px] font-bold text-cinema-mutedDark mt-0.5">Directed by {details.directorNames.join(", ")}</div>
       ) : null}
-      {rating && (
-        <span className="inline-flex items-center gap-1">
-          <Star className="w-3 h-3 text-cinema-gold" fill="currentColor" /> {rating}/10
-        </span>
-      )}
-      {details?.runtime ? <span>{details.runtime} min</span> : null}
-      {details?.directorNames?.length ? <span>Directed by {details.directorNames.join(", ")}</span> : null}
-      {details?.cast?.length ? <span>Starring {details.cast.join(", ")}</span> : null}
+      {details?.cast?.length ? (
+        <div className="text-[11px] font-bold text-cinema-mutedDark mt-0.5">Starring {details.cast.join(", ")}</div>
+      ) : null}
     </div>
   );
 }
