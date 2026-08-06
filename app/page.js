@@ -375,6 +375,7 @@ function DetailsRow({ movie, certifications, setCertifications }) {
         </span>
       )}
       {details?.runtime ? <span>{details.runtime} min</span> : null}
+      {details?.directorNames?.length ? <span>Directed by {details.directorNames.join(", ")}</span> : null}
       {details?.cast?.length ? <span>Starring {details.cast.join(", ")}</span> : null}
     </div>
   );
