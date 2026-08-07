@@ -2,22 +2,32 @@
 import { useState, useEffect } from "react";
 import { useSession, signIn } from "next-auth/react";
 
-// same list the main app uses — duplicated here since this is a separate,
-// intentionally lightweight page not wired into the main app bundle
+// TMDB's full movie genre list — deliberately NOT the same restricted
+// subset the main app's UI uses. A user's rated movies can carry genre
+// tags outside what the app's own genre picker offers (History, on movie
+// 36, is a real example), and this is a diagnostic tool — it should be
+// able to name anything TMDB itself would name, not just what's in the
+// app's curated list.
 const GENRES = [
   { id: 28, name: "Action" },
   { id: 12, name: "Adventure" },
   { id: 16, name: "Animation" },
   { id: 35, name: "Comedy" },
   { id: 80, name: "Crime" },
+  { id: 99, name: "Documentary" },
   { id: 18, name: "Drama" },
+  { id: 10751, name: "Family" },
   { id: 14, name: "Fantasy" },
+  { id: 36, name: "History" },
   { id: 27, name: "Horror" },
+  { id: 10402, name: "Music" },
   { id: 9648, name: "Mystery" },
   { id: 10749, name: "Romance" },
   { id: 878, name: "Sci-Fi" },
+  { id: 10770, name: "TV Movie" },
   { id: 53, name: "Thriller" },
-  { id: 10751, name: "Family" },
+  { id: 10752, name: "War" },
+  { id: 37, name: "Western" },
 ];
 function genreName(id) {
   return GENRES.find((g) => g.id === id)?.name || `Genre ${id}`;
