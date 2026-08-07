@@ -248,6 +248,14 @@ export default function AdminPage() {
                 <div>Votes — yes: {viewAsResult.voteBreakdown.yes}, no: {viewAsResult.voteBreakdown.no}, seen: {viewAsResult.voteBreakdown.seen}</div>
                 <div>Genres they respond to best: {viewAsResult.topGenreAffinities.map((g) => `${genreName(g.genreId)} (${g.score})`).join(", ") || "none yet"}</div>
                 <div>Genres they respond to worst: {viewAsResult.bottomGenreAffinities.map((g) => `${genreName(g.genreId)} (${g.score})`).join(", ") || "none yet"}</div>
+                <div className="mt-2 pt-2 border-t border-neutral-800">
+                  <div className="font-bold text-neutral-500 uppercase text-[10px] mb-1">Cast, director, writer, keyword (weighted)</div>
+                  <div>Directors: {viewAsResult.directorAffinities.top.map((d) => `${d.name} (${d.score})`).join(", ") || "none yet"}</div>
+                  <div>Writers: {viewAsResult.writerAffinities.top.map((w) => `${w.name} (${w.score})`).join(", ") || "none yet"}</div>
+                  <div>Cast: {viewAsResult.castAffinities.top.map((c) => `${c.name} (${c.score})`).join(", ") || "none yet"}</div>
+                  <div>Keywords they like: {viewAsResult.keywordAffinities.top.map((k) => `${k.name} (${k.score})`).join(", ") || "none yet"}</div>
+                  <div>Keywords they avoid: {viewAsResult.keywordAffinities.bottom.map((k) => `${k.name} (${k.score})`).join(", ") || "none yet"}</div>
+                </div>
                 <div>Excludes — genres: {viewAsResult.settings.excludedGenres.join(", ") || "none"}; keywords: {viewAsResult.settings.excludedKeywords.map((k) => k.name).join(", ") || "none"}</div>
               </div>
             )}
