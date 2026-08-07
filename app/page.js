@@ -107,6 +107,21 @@ function TheaterBadge() {
   );
 }
 
+function EmptyState({ icon: Icon, message, subtext, actionLabel, onAction }) {
+  return (
+    <div className="text-center py-8">
+      {Icon && <Icon className="w-6 h-6 text-cinema-mutedDark mx-auto mb-2" />}
+      <p className="text-sm font-bold text-cinema-mutedLight mb-1">{message}</p>
+      {subtext && <p className="text-xs text-cinema-mutedDark mb-3">{subtext}</p>}
+      {actionLabel && onAction && (
+        <button onClick={onAction} className="mt-1 text-xs font-bold px-3 py-1.5 rounded-full border border-cinema-gold text-cinema-gold hover:bg-cinema-gold/10">
+          {actionLabel}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function Chip({ active, onClick, children, variant = "gold" }) {
   const activeClass = variant === "orange" ? "bg-cinema-orange border-cinema-orange text-cinema-ink" : "bg-cinema-gold border-cinema-gold text-cinema-ink";
   const inactiveHover = variant === "orange" ? "hover:border-cinema-orange/60" : "hover:border-cinema-gold/60";
@@ -2840,7 +2855,12 @@ export default function Home() {
   }, [members.length, roomMeta?.type, activeRoomCode]);
 
   if (status === "loading") {
-    return <div className="min-h-screen flex items-center justify-center bg-cinema-bg text-cinema-gold" style={bodyFont}>Loading…</div>;
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-cinema-bg" style={bodyFont}>
+        <div className="w-6 h-6 rounded-full border-2 border-cinema-border border-t-cinema-gold animate-spin" />
+        <p className="text-cinema-mutedLight text-sm">Loading…</p>
+      </div>
+    );
   }
 
   if (status !== "authenticated") {
@@ -2849,7 +2869,7 @@ export default function Home() {
         <div className="text-center max-w-xs w-full px-4">
           <div className="flex items-center justify-center gap-2 mb-4">
             <Film className="w-8 h-8 text-cinema-gold" />
-            <h1 className="text-3xl text-cinema-gold" style={displayFont}>Family Movie Match</h1>
+            <h1 className="text-3xl text-cinema-bronze" style={displayFont}>Family Movie Match</h1>
           </div>
           <p className="text-cinema-muted mb-6 text-sm">Sign in to link up with your family and start swiping.</p>
 
@@ -2901,7 +2921,12 @@ export default function Home() {
   }
 
   if (loadingProfile) {
-    return <div className="min-h-screen flex items-center justify-center bg-cinema-bg text-cinema-gold" style={bodyFont}>Loading your profile…</div>;
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-cinema-bg" style={bodyFont}>
+        <div className="w-6 h-6 rounded-full border-2 border-cinema-border border-t-cinema-gold animate-spin" />
+        <p className="text-cinema-mutedLight text-sm">Loading your profile…</p>
+      </div>
+    );
   }
 
   const rotation = Math.max(-15, Math.min(15, dragX / 12));
@@ -2934,7 +2959,7 @@ export default function Home() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-extrabold text-cinema-gold">Add or rate a movie</h2>
+              <h2 className="text-lg font-extrabold text-cinema-bronze">Add or rate a movie</h2>
               <button onClick={closeManualSearch} className="text-cinema-mutedDark hover:text-stone-50" aria-label="Close">
                 <X className="w-5 h-5" />
               </button>
@@ -3085,7 +3110,7 @@ export default function Home() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-extrabold text-cinema-gold">Who's swiping?</h2>
+              <h2 className="text-lg font-extrabold text-cinema-bronze">Who's swiping?</h2>
               <button onClick={() => { setShowProfileSwitcher(false); setShowCreateLocalProfile(false); }} className="text-cinema-mutedDark hover:text-stone-50" aria-label="Close">
                 <X className="w-5 h-5" />
               </button>
@@ -3337,7 +3362,7 @@ export default function Home() {
         >
           <div className="text-center animate-[pulse_1.2s_ease-in-out_infinite]">
             <Sparkles className="w-16 h-16 text-cinema-gold mx-auto mb-2" />
-            <h2 className="text-5xl text-cinema-gold mb-3" style={displayFont}>IT'S A MATCH!</h2>
+            <h2 className="text-5xl text-cinema-bronze mb-3" style={displayFont}>IT'S A MATCH!</h2>
             {celebration.poster_path && (
               <img
                 src={`https://image.tmdb.org/t/p/w300${celebration.poster_path}`}
@@ -3386,7 +3411,7 @@ export default function Home() {
       <div className="px-5 pt-5 pb-3 flex items-center justify-between border-b border-cinema-border/60">
         <div className="flex items-center gap-2">
           <Film className="w-6 h-6 text-cinema-gold" />
-          <h1 className="text-2xl text-cinema-gold" style={displayFont}>Family Movie Match</h1>
+          <h1 className="text-2xl text-cinema-bronze" style={displayFont}>Family Movie Match</h1>
         </div>
         {profile?.group && (
           <button
@@ -3412,7 +3437,7 @@ export default function Home() {
 
           {roomMeta?.type === "movie-night" ? (
             <div>
-              <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-1">Movie Night code</div>
+              <h3 className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-1">Movie Night code</h3>
               <div className="mb-3 px-4 py-3 rounded-xl bg-cinema-bg border-2 border-cinema-gold flex items-center justify-between gap-3">
                 <div className="text-3xl font-extrabold text-cinema-gold tracking-[0.15em] flex-1 text-center" style={{ fontFamily: "monospace" }}>
                   {activeRoomCode}
@@ -3497,7 +3522,7 @@ export default function Home() {
       <div className="p-5 max-w-2xl mx-auto">
         {screen === "dob" && (
           <div className="max-w-sm mx-auto py-8">
-            <h2 className="text-xl text-cinema-gold mb-2" style={displayFont}>One quick thing first</h2>
+            <h2 className="text-xl text-cinema-bronze mb-2" style={displayFont}>One quick thing first</h2>
             <p className="text-cinema-muted mb-5 text-sm">We ask everyone's date of birth so we can keep content age-appropriate.</p>
             <label className="text-xs font-bold text-cinema-muted uppercase tracking-wide">Date of birth</label>
             <div className="mt-1 mb-2">
@@ -3514,7 +3539,7 @@ export default function Home() {
           <div className="max-w-sm mx-auto py-8">
             {!parentConsentSent ? (
               <>
-                <h2 className="text-xl text-cinema-gold mb-2" style={displayFont}>Almost there</h2>
+                <h2 className="text-xl text-cinema-bronze mb-2" style={displayFont}>Almost there</h2>
                 <p className="text-cinema-muted mb-5 text-sm">
                   Since you're under 13, we need a parent or guardian to approve your account. You can start using the app
                   right away with G-rated titles only — full access unlocks once they approve.
@@ -3542,7 +3567,7 @@ export default function Home() {
               </>
             ) : (
               <div className="text-center">
-                <h2 className="text-xl text-cinema-gold mb-2" style={displayFont}>Request sent!</h2>
+                <h2 className="text-xl text-cinema-bronze mb-2" style={displayFont}>Request sent!</h2>
                 <p className="text-cinema-muted mb-5 text-sm">
                   We emailed {parentEmailInput} for approval. You can keep going now — everything's limited to G-rated
                   titles until they approve.
@@ -3557,7 +3582,7 @@ export default function Home() {
 
         {screen === "migrate-favorites" && (
           <div className="max-w-sm mx-auto py-8">
-            <h2 className="text-xl text-cinema-gold mb-2" style={displayFont}>Quick favorites check</h2>
+            <h2 className="text-xl text-cinema-bronze mb-2" style={displayFont}>Quick favorites check</h2>
             <p className="text-cinema-muted mb-5 text-sm">
               We're upgrading how favorites work — confirm each one below and pick how you'd rate it. Anything you skip
               just won't carry over.
@@ -3697,142 +3722,159 @@ export default function Home() {
 
         {screen === "setup" && profile?.group && (
           <div className="max-w-lg mx-auto pb-6">
-            <h2 className="text-xl text-cinema-gold mb-4" style={displayFont}>
+            <h2 className="text-xl text-cinema-bronze mb-4" style={displayFont}>
               {roomMeta?.type === "movie-night" ? "Set up for this Movie Night" : "Your streaming setup"}
             </h2>
-            {roomMeta?.type !== "movie-night" && (
-              <div className="mb-5">
-                <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Date of birth</div>
-                {!showDobEdit ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-stone-50">{profile?.dob || "Not set"}</span>
-                    <button
-                      onClick={() => {
-                        setDobFromString(profile?.dob || "");
-                        setDobError("");
-                        setShowDobEdit(true);
-                      }}
-                      className="text-xs font-bold px-2 py-1 rounded-lg bg-cinema-panel border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold"
-                    >
-                      Edit
-                    </button>
+
+            {(roomMeta?.type !== "movie-night" || isPendingMinor) && (
+              <div className="mb-4 p-4 rounded-xl bg-cinema-panel border border-cinema-border">
+                <h3 className="text-sm font-bold text-cinema-bronze uppercase tracking-wide mb-3">Account</h3>
+                {roomMeta?.type !== "movie-night" && (
+                  <div className="mb-5">
+                    <h4 className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Date of birth</h4>
+                    {!showDobEdit ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-stone-50">{profile?.dob || "Not set"}</span>
+                        <button
+                          onClick={() => {
+                            setDobFromString(profile?.dob || "");
+                            setDobError("");
+                            setShowDobEdit(true);
+                          }}
+                          className="text-xs font-bold px-2 py-1 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="mb-2">
+                          <DobFields month={dobMonth} day={dobDay} year={dobYear} setMonth={setDobMonth} setDay={setDobDay} setYear={setDobYear} />
+                        </div>
+                        {dobError && <p className="text-cinema-orangeLight text-xs mb-2">{dobError}</p>}
+                        <div className="flex gap-2">
+                          <button onClick={saveDobEdit} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-cinema-gold text-cinema-ink hover:bg-cinema-goldLight">
+                            Save
+                          </button>
+                          <button onClick={() => setShowDobEdit(false)} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-mutedLight">
+                            Cancel
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-cinema-mutedDark mt-2">
+                          Fixing an incorrect birthdate here updates your access immediately — no need to contact support.
+                        </p>
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <div>
-                    <div className="mb-2">
-                      <DobFields month={dobMonth} day={dobDay} year={dobYear} setMonth={setDobMonth} setDay={setDobDay} setYear={setDobYear} />
-                    </div>
-                    {dobError && <p className="text-cinema-orangeLight text-xs mb-2">{dobError}</p>}
+                )}
+                {roomMeta?.type !== "movie-night" && !profile?.isMinor && (
+                  <div className={isPendingMinor ? "mb-0" : "mb-0"}>
+                    <h4 className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Your role in this family</h4>
                     <div className="flex gap-2">
-                      <button onClick={saveDobEdit} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-cinema-gold text-cinema-ink hover:bg-cinema-goldLight">
-                        Save
-                      </button>
-                      <button onClick={() => setShowDobEdit(false)} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-cinema-panel border border-cinema-border text-cinema-mutedLight">
-                        Cancel
-                      </button>
+                      <Chip
+                        active={roleInput === "parent"}
+                        onClick={() => !roleLockedForMe && setRoleInput("parent")}
+                      >
+                        Parent{roleLockedForMe ? " 🔒" : ""}
+                      </Chip>
+                      <Chip active={roleInput === "child"} onClick={() => setRoleInput("child")}>Child</Chip>
                     </div>
-                    <p className="text-[11px] text-cinema-mutedDark mt-2">
-                      Fixing an incorrect birthdate here updates your access immediately — no need to contact support.
-                    </p>
+                    {roleLockedForMe && (
+                      <p className="text-[11px] text-cinema-mutedDark mt-1">
+                        This family already has a parent — ask them to promote you from the Family tab.
+                      </p>
+                    )}
+                  </div>
+                )}
+                {isPendingMinor && (
+                  <div className="px-3 py-2 rounded-lg bg-cinema-gold/15 border border-cinema-gold text-xs text-cinema-gold">
+                    Your account is waiting on parent approval — you'll see G-rated titles only until then.
                   </div>
                 )}
               </div>
             )}
-            {roomMeta?.type !== "movie-night" && !profile?.isMinor && (
+
+            <div className="mb-4 p-4 rounded-xl bg-cinema-panel border border-cinema-border">
+              <h3 className="text-sm font-bold text-cinema-bronze uppercase tracking-wide mb-3">Watching</h3>
               <div className="mb-5">
-                <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Your role in this family</div>
+                <h4 className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Region</h4>
                 <div className="flex gap-2">
-                  <Chip
-                    active={roleInput === "parent"}
-                    onClick={() => !roleLockedForMe && setRoleInput("parent")}
-                  >
-                    Parent{roleLockedForMe ? " 🔒" : ""}
-                  </Chip>
-                  <Chip active={roleInput === "child"} onClick={() => setRoleInput("child")}>Child</Chip>
+                  <Chip active={regionInput === "CA"} onClick={() => setRegionInput("CA")}>Canada</Chip>
+                  <Chip active={regionInput === "US"} onClick={() => setRegionInput("US")}>United States</Chip>
+                  <Chip active={regionInput === "GB"} onClick={() => setRegionInput("GB")}>United Kingdom</Chip>
                 </div>
-                {roleLockedForMe && (
-                  <p className="text-[11px] text-cinema-mutedDark mt-1">
-                    This family already has a parent — ask them to promote you from the Family tab.
-                  </p>
+              </div>
+              <div className="mb-5">
+                <h4 className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Services you're subscribed to</h4>
+                <div className="flex flex-wrap gap-2">{[...availableProviders].sort((a, b) => a.name.localeCompare(b.name)).map((s) => <Chip key={s.id} active={servicesInput.includes(s.id)} onClick={() => toggleService(s.id)}>{s.name}</Chip>)}</div>
+              </div>
+              <div className="mb-0">
+                <h4 className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Going out to the movies?</h4>
+                <Chip active={wantsTheatersInput} onClick={() => setWantsTheatersInput((v) => !v)}>
+                  Include what's currently in theaters
+                </Chip>
+              </div>
+            </div>
+
+            <div className="mb-4 p-4 rounded-xl bg-cinema-panel border border-cinema-border">
+              <h3 className="text-sm font-bold text-cinema-bronze uppercase tracking-wide mb-3">Taste</h3>
+              <div className="mb-5">
+                <h4 className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Genres you like</h4>
+                <div className="flex flex-wrap gap-2">{GENRES.map((g) => <Chip key={g.id} active={genresInput.includes(g.id)} onClick={() => toggleGenre(g.id)}>{g.name}</Chip>)}</div>
+              </div>
+              <div className="mb-5">
+                <h4 className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Genres to avoid</h4>
+                <div className="flex flex-wrap gap-2">{GENRES.map((g) => <Chip key={g.id} variant="orange" active={excludedGenresInput.includes(g.id)} onClick={() => toggleExcludedGenre(g.id)}>{g.name}</Chip>)}</div>
+              </div>
+              <div className="mb-0">
+                <h4 className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Specific things to avoid</h4>
+                <p className="text-[11px] text-cinema-mutedDark mb-2">More specific than a genre, like "superhero." Someone else's yes still overrides this.</p>
+                {excludedKeywordsInput.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {excludedKeywordsInput.map((k) => (
+                      <button
+                        key={k.id}
+                        onClick={() => removeExcludedKeyword(k.id)}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-bold border-2 bg-cinema-orange border-cinema-orange text-cinema-ink"
+                      >
+                        {k.name} <X className="w-3 h-3" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <input
+                    value={keywordSearchQuery}
+                    onChange={(e) => setKeywordSearchQuery(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && runKeywordSearch()}
+                    placeholder="Search for something to avoid…"
+                    className="flex-1 px-3 py-2 rounded-lg bg-cinema-bg border border-cinema-border text-stone-50 text-sm outline-none focus:border-cinema-gold"
+                  />
+                  <button onClick={runKeywordSearch} disabled={keywordSearching} className="px-3 py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-mutedLight text-xs font-bold hover:border-cinema-gold disabled:opacity-50">
+                    {keywordSearching ? "…" : "Search"}
+                  </button>
+                </div>
+                {keywordSearchResults.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {keywordSearchResults.map((k) => (
+                      <button
+                        key={k.id}
+                        onClick={() => addExcludedKeyword(k)}
+                        className="px-3 py-1.5 rounded-full text-sm font-bold border-2 border-cinema-border text-cinema-mutedLight hover:border-cinema-orange hover:text-cinema-orangeLight"
+                      >
+                        + {k.name}
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
-            )}
-            {isPendingMinor && (
-              <div className="mb-5 px-3 py-2 rounded-lg bg-cinema-gold/15 border border-cinema-gold text-xs text-cinema-gold">
-                Your account is waiting on parent approval — you'll see G-rated titles only until then.
-              </div>
-            )}
-            <div className="mb-5">
-              <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Region</div>
-              <div className="flex gap-2">
-                <Chip active={regionInput === "CA"} onClick={() => setRegionInput("CA")}>Canada</Chip>
-                <Chip active={regionInput === "US"} onClick={() => setRegionInput("US")}>United States</Chip>
-                <Chip active={regionInput === "GB"} onClick={() => setRegionInput("GB")}>United Kingdom</Chip>
-              </div>
             </div>
-            <div className="mb-5">
-              <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Services you're subscribed to</div>
-              <div className="flex flex-wrap gap-2">{[...availableProviders].sort((a, b) => a.name.localeCompare(b.name)).map((s) => <Chip key={s.id} active={servicesInput.includes(s.id)} onClick={() => toggleService(s.id)}>{s.name}</Chip>)}</div>
-            </div>
-            <div className="mb-5">
-              <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Going out to the movies?</div>
-              <Chip active={wantsTheatersInput} onClick={() => setWantsTheatersInput((v) => !v)}>
-                Include what's currently in theaters
-              </Chip>
-            </div>
-            <div className="mb-5">
-              <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Genres you like</div>
-              <div className="flex flex-wrap gap-2">{GENRES.map((g) => <Chip key={g.id} active={genresInput.includes(g.id)} onClick={() => toggleGenre(g.id)}>{g.name}</Chip>)}</div>
-            </div>
-            <div className="mb-5">
-              <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Genres to avoid</div>
-              <div className="flex flex-wrap gap-2">{GENRES.map((g) => <Chip key={g.id} variant="orange" active={excludedGenresInput.includes(g.id)} onClick={() => toggleExcludedGenre(g.id)}>{g.name}</Chip>)}</div>
-            </div>
-            <div className="mb-5">
-              <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Specific things to avoid</div>
-              <p className="text-[11px] text-cinema-mutedDark mb-2">More specific than a genre, like "superhero." Someone else's yes still overrides this.</p>
-              {excludedKeywordsInput.length > 0 && (
-                <div className="flex flex-wrap gap-2 mb-2">
-                  {excludedKeywordsInput.map((k) => (
-                    <button
-                      key={k.id}
-                      onClick={() => removeExcludedKeyword(k.id)}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-bold border-2 bg-cinema-orange border-cinema-orange text-cinema-ink"
-                    >
-                      {k.name} <X className="w-3 h-3" />
-                    </button>
-                  ))}
-                </div>
-              )}
-              <div className="flex gap-2">
-                <input
-                  value={keywordSearchQuery}
-                  onChange={(e) => setKeywordSearchQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && runKeywordSearch()}
-                  placeholder="Search for something to avoid…"
-                  className="flex-1 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 text-sm outline-none focus:border-cinema-gold"
-                />
-                <button onClick={runKeywordSearch} disabled={keywordSearching} className="px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-cinema-mutedLight text-xs font-bold hover:border-cinema-gold disabled:opacity-50">
-                  {keywordSearching ? "…" : "Search"}
-                </button>
-              </div>
-              {keywordSearchResults.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {keywordSearchResults.map((k) => (
-                    <button
-                      key={k.id}
-                      onClick={() => addExcludedKeyword(k)}
-                      className="px-3 py-1.5 rounded-full text-sm font-bold border-2 border-cinema-border text-cinema-mutedLight hover:border-cinema-orange hover:text-cinema-orangeLight"
-                    >
-                      + {k.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+
             {roomMeta?.type !== "movie-night" && !isPendingMinor && (
-            <div className="mb-6">
-              <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">All-time favorite movies (optional)</div>
+            <div className="mb-4 p-4 rounded-xl bg-cinema-panel border border-cinema-border">
+              <h3 className="text-sm font-bold text-cinema-bronze uppercase tracking-wide mb-3">Favorites</h3>
+              <div className="mb-0">
+              <h4 className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">All-time favorite movies (optional)</h4>
               <div className="relative mb-2">
                 <div className="flex gap-2">
                   <input
@@ -3840,9 +3882,9 @@ export default function Home() {
                     onChange={(e) => setFavInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && addFavorite()}
                     placeholder="Search a title…"
-                    className="flex-1 px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold"
+                    className="flex-1 px-3 py-2 rounded-lg bg-cinema-bg border border-cinema-border text-stone-50 outline-none focus:border-cinema-gold"
                   />
-                  <button onClick={addFavorite} className="px-3 py-2 rounded-lg bg-cinema-panel text-cinema-mutedLight text-xs font-bold">Add as typed</button>
+                  <button onClick={addFavorite} className="px-3 py-2 rounded-lg bg-cinema-bg text-cinema-mutedLight text-xs font-bold">Add as typed</button>
                 </div>
                 {favInput.trim().length >= 2 && (
                   <div className="absolute z-10 left-0 right-0 mt-1 bg-cinema-panel border border-cinema-border rounded-lg overflow-hidden shadow-xl">
@@ -3872,13 +3914,14 @@ export default function Home() {
               </div>
               <div className="flex flex-wrap gap-2">
                 {favorites.map((f, i) => (
-                  <span key={i} className="pl-3 pr-1 py-1 rounded-full bg-cinema-panel text-xs text-cinema-mutedLight flex items-center gap-1">
+                  <span key={i} className="pl-3 pr-1 py-1 rounded-full bg-cinema-bg text-xs text-cinema-mutedLight flex items-center gap-1">
                     <Star className="w-3 h-3 text-cinema-gold" /> {f}
                     <button onClick={() => removeFavorite(f)} className="ml-1 w-4 h-4 rounded-full hover:bg-cinema-orange/30 flex items-center justify-center" aria-label={`Remove ${f}`}>
                       <X className="w-3 h-3" />
                     </button>
                   </span>
                 ))}
+              </div>
               </div>
             </div>
             )}
@@ -4101,15 +4144,9 @@ export default function Home() {
 
         {screen === "matches" && (
           <div className="max-w-lg mx-auto">
-            <div className="rounded-xl border-2 border-cinema-gold bg-cinema-panel p-4 mb-5">
-              <div className="flex justify-center gap-2 mb-2">{Array.from({ length: 10 }).map((_, i) => <span key={i} className="w-1.5 h-1.5 rounded-full bg-cinema-gold" />)}</div>
-              <h2 className="text-center text-2xl text-cinema-gold" style={displayFont}>Match Marquee</h2>
-              <div className="flex justify-center gap-2 mt-2">{Array.from({ length: 10 }).map((_, i) => <span key={i} className="w-1.5 h-1.5 rounded-full bg-cinema-gold" />)}</div>
-            </div>
-
             {roomMeta?.type === "movie-night" && instantMatches.length > 0 && (
               <div className="mb-6">
-                <h2 className="text-lg font-medium text-cinema-gold uppercase tracking-wide mb-2">
+                <h2 className="text-lg font-medium text-cinema-bronze uppercase tracking-wide mb-2">
                   Already agree — no swiping needed
                 </h2>
                 <p className="text-[11px] text-cinema-mutedDark mb-2">
@@ -4123,7 +4160,7 @@ export default function Home() {
 
             {otherMembers.length > 0 && (
               <div className="mb-5">
-                <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Matching with</div>
+                <h3 className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Matching with</h3>
                 <div className="flex flex-wrap gap-2">
                   {otherMembers.map((m) => (
                     <Chip key={m.email} active={consideredEmails.includes(m.email)} onClick={() => toggleMatchWith(m.email)}>
@@ -4163,15 +4200,15 @@ export default function Home() {
             )}
 
             {consideredEmails.length === 0 && otherMembers.length > 0 && (
-              <p className="text-cinema-muted text-sm text-center py-6">Select at least one family member above to see matches. Looking for your own personal list? Check My Movies.</p>
+              <EmptyState icon={Users} message="Select at least one family member" subtext="Looking for your own personal list? Check My Movies." />
             )}
 
             {consideredEmails.length > 0 && readyToWatch.length === 0 && (
-              <p className="text-cinema-muted text-sm text-center py-6">No shared picks yet with this group — keep swiping.</p>
+              <EmptyState icon={Sparkles} message="No shared picks yet" subtext="Keep swiping — matches will show up here." actionLabel="Go to Swipe" onAction={() => setScreen("swipe")} />
             )}
 
             {readyToWatch.length > 0 && visibleMatches.length === 0 && (
-              <p className="text-cinema-muted text-sm text-center py-6">Nothing matches those filters.</p>
+              <EmptyState icon={Search} message="Nothing matches those filters" />
             )}
 
             {visibleMatchesAll.length > 0 && (
@@ -4182,7 +4219,7 @@ export default function Home() {
 
             {visibleMatchesSome.length > 0 && (
               <div className="mt-6">
-                <h3 className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">
+                <h3 className="text-base font-semibold text-cinema-bronze uppercase tracking-wide mb-2">
                   Partial genre matches
                 </h3>
                 <p className="text-[11px] text-cinema-mutedDark mb-2">Match some, but not all, of your selected genres.</p>
@@ -4194,13 +4231,13 @@ export default function Home() {
 
             {(everyoneMatches.length > 0 || perMemberMatches.some((p) => p.movies.length > 0)) && (
               <div className="mt-8 pt-6 border-t-2 border-cinema-border">
-                <h2 className="text-lg font-medium text-cinema-gold mb-4" style={displayFont}>
+                <h2 className="text-lg font-medium text-cinema-bronze mb-4" style={displayFont}>
                   OTHER MATCHES IN YOUR FAMILY
                 </h2>
 
                 {everyoneMatches.length > 0 && (
                   <div className="mb-6 pb-6 border-b border-cinema-border last:border-b-0 last:pb-0 last:mb-0">
-                    <h3 className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">Everyone</h3>
+                    <h3 className="text-base font-semibold text-cinema-bronze uppercase tracking-wide mb-2">Everyone</h3>
                     <div className="space-y-3">{everyoneMatches.map(renderMatchCard)}</div>
                   </div>
                 )}
@@ -4209,7 +4246,7 @@ export default function Home() {
                   .filter((p) => p.movies.length > 0)
                   .map((p) => (
                     <div key={p.member.email} className="mb-6 pb-6 border-b border-cinema-border last:border-b-0 last:pb-0 last:mb-0">
-                      <h3 className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">You & {p.member.name}</h3>
+                      <h3 className="text-base font-semibold text-cinema-bronze uppercase tracking-wide mb-2">You & {p.member.name}</h3>
                       <div className="space-y-3">{p.movies.map(renderMatchCard)}</div>
                     </div>
                   ))}
@@ -4264,17 +4301,19 @@ export default function Home() {
 
             {historyStatusFilter === "solo" && (
               <>
-                <h2 className="text-lg font-medium text-cinema-gold uppercase tracking-wide mb-2">
+                <h2 className="text-lg font-medium text-cinema-bronze uppercase tracking-wide mb-2">
                   Solo Watch ({visibleSoloWatch.length})
                 </h2>
                 <p className="text-[11px] text-cinema-mutedDark mb-2">You said yes, but at least one other family member hasn't — these are ones to watch on your own.</p>
                 <div className="space-y-3 mb-2">
-                  {visibleSoloWatch.length === 0 && <p className="text-cinema-muted text-sm py-2">Nothing here yet.</p>}
+                  {visibleSoloWatch.length === 0 && (
+                    <EmptyState icon={Heart} message="No solo watches yet" subtext="Movies you said yes to that the rest of the family hasn't will show up here." actionLabel="Go to Swipe" onAction={() => setScreen("swipe")} />
+                  )}
                   {visibleSoloAll.map(renderSoloCard)}
                 </div>
                 {visibleSoloSome.length > 0 && (
                   <div className="mb-6">
-                    <h3 className="text-base font-semibold text-cinema-gold uppercase tracking-wide mb-2">
+                    <h3 className="text-base font-semibold text-cinema-bronze uppercase tracking-wide mb-2">
                       Partial genre matches
                     </h3>
                     <p className="text-[11px] text-cinema-mutedDark mb-2">Match some, but not all, of your selected genres.</p>
@@ -4288,11 +4327,13 @@ export default function Home() {
 
             {(historyStatusFilter === "all" || historyStatusFilter === "yes") && (
               <>
-                <h2 className="text-lg font-medium text-cinema-gold uppercase tracking-wide mb-2">
+                <h2 className="text-lg font-medium text-cinema-bronze uppercase tracking-wide mb-2">
                   Yes ({visibleYesInVotes.length})
                 </h2>
                 <div className="space-y-3 mb-6">
-                  {visibleYesInVotes.length === 0 && <p className="text-cinema-muted text-sm py-2">Nothing here yet.</p>}
+                  {visibleYesInVotes.length === 0 && (
+                    <EmptyState icon={Heart} message="Nothing here yet" subtext="Movies you've said yes to will show up here." actionLabel="Go to Swipe" onAction={() => setScreen("swipe")} />
+                  )}
                   {visibleYesInVotes.map((m) => (
                     <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
                       {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
@@ -4314,12 +4355,14 @@ export default function Home() {
 
             {(historyStatusFilter === "all" || historyStatusFilter === "seen") && (
               <>
-                <h2 className="text-lg font-medium text-cinema-gold uppercase tracking-wide mb-2">
+                <h2 className="text-lg font-medium text-cinema-bronze uppercase tracking-wide mb-2">
                   Seen ({visibleSeen.length})
                 </h2>
                 <p className="text-[11px] text-cinema-mutedDark mb-2">Movies you've marked as already seen.</p>
                 <div className="space-y-3 mb-6">
-                  {visibleSeen.length === 0 && <p className="text-cinema-muted text-sm py-2">Nothing here yet.</p>}
+                  {visibleSeen.length === 0 && (
+                    <EmptyState icon={Eye} message="Nothing marked as seen yet" actionLabel="Go to Swipe" onAction={() => setScreen("swipe")} />
+                  )}
                   {visibleSeen.map((m) => (
                     <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
                       {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
@@ -4342,11 +4385,11 @@ export default function Home() {
 
             {(historyStatusFilter === "all" || historyStatusFilter === "no") && (
               <>
-                <h2 className="text-lg font-medium text-cinema-gold uppercase tracking-wide mb-2">
+                <h2 className="text-lg font-medium text-cinema-bronze uppercase tracking-wide mb-2">
                   No ({visibleNoInVotes.length})
                 </h2>
                 <div className="space-y-3 mb-6">
-                  {visibleNoInVotes.length === 0 && <p className="text-cinema-muted text-sm py-2">Nothing here yet.</p>}
+                  {visibleNoInVotes.length === 0 && <EmptyState icon={X} message="Nothing here yet" />}
                   {visibleNoInVotes.map((m) => (
                     <div key={m.id} className="flex gap-3 bg-cinema-panel/60 rounded-xl p-3 border border-cinema-border">
                       {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
@@ -4368,12 +4411,14 @@ export default function Home() {
 
             {(historyStatusFilter === "all" || historyStatusFilter === "review-later") && (
               <>
-                <h2 className="text-lg font-medium text-cinema-gold uppercase tracking-wide mb-2">
+                <h2 className="text-lg font-medium text-cinema-bronze uppercase tracking-wide mb-2">
                   Review Later ({visibleReviewLater.length})
                 </h2>
                 <p className="text-[11px] text-cinema-mutedDark mb-2">Movies you skipped to decide on later — still no vote cast.</p>
                 <div className="space-y-3">
-                  {visibleReviewLater.length === 0 && <p className="text-cinema-muted text-sm py-2">Nothing here yet.</p>}
+                  {visibleReviewLater.length === 0 && (
+                    <EmptyState icon={Clock} message="Nothing saved for later" actionLabel="Go to Swipe" onAction={() => setScreen("swipe")} />
+                  )}
                   {visibleReviewLater.map((m) => (
                     <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
                       {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
@@ -4406,7 +4451,7 @@ export default function Home() {
             <p className="text-xs text-cinema-mutedDark mb-4">What everyone else in the family has said yes to.</p>
             {spotlight.length > 0 && (
               <>
-                <h2 className="text-lg font-medium text-cinema-gold uppercase tracking-wide mb-2">Recommended to the family</h2>
+                <h2 className="text-lg font-medium text-cinema-bronze uppercase tracking-wide mb-2">Recommended to the family</h2>
                 <div className="space-y-3 mb-6">
                   {Array.from(new Set(spotlight.map((s) => s.movieId)))
                     .map((mid) => (pool ? pool.movies.find((m) => m.id === mid) : null))
@@ -4444,7 +4489,7 @@ export default function Home() {
 
             {familyYesByMember.map(({ member, movies }) => (
               <div key={member.email} className="mb-6">
-                <h2 className="text-lg font-medium text-cinema-gold uppercase tracking-wide mb-2">{member.name} said yes to ({movies.length})</h2>
+                <h2 className="text-lg font-medium text-cinema-bronze uppercase tracking-wide mb-2">{member.name} said yes to ({movies.length})</h2>
                 {movies.length === 0 && <p className="text-cinema-mutedDark text-sm mb-2">Nothing yet.</p>}
                 <div className="space-y-3">
                   {movies.map((m) => {
@@ -4494,7 +4539,7 @@ export default function Home() {
             </button>
             {(profile?.groups?.length ? profile.groups : profile?.group ? [{ code: profile.group, nickname: profile.group }] : []).length > 1 && (
               <div className="mb-4">
-                <div className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-1">Your families</div>
+                <h3 className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-1">Your families</h3>
                 <p className="text-[11px] text-cinema-mutedDark mb-2">Tap a name below to give that family your own nickname — just for you.</p>
                 <div className="space-y-2">
                   {(profile?.groups?.length ? profile.groups : [{ code: profile.group, nickname: profile.group }]).map((g) => (

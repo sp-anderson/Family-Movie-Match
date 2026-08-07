@@ -12,6 +12,7 @@ module.exports = {
           ink: "#231C12",
           gold: "#D9A441",
           goldLight: "#E8C27A",
+          bronze: "#A6864F",
           green: "#5F8F5B",
           orange: "#C1613B",
           orangeLight: "#D98B6B",
