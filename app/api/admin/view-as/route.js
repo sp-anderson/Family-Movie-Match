@@ -47,12 +47,13 @@ export async function GET(request) {
   // build affinity for every signal the real algorithm actually uses, same
   // weighting — genre, cast, director, writer, keyword. Weighted scores
   // (post-multiplier) so this reflects actual contribution, not raw signal.
-  const genreAffinity = {}, castAffinity = {}, directorAffinity = {}, writerAffinity = {}, keywordAffinity = {};
+  const genreAffinity = {}, castAffinity = {}, directorAffinity = {}, writerAffinity = {}, keywordAffinity = {}, languageAffinity = {};
   const sourceMovieFor = {}; // "cast:123" -> a movieId where that id appeared, for name resolution below
   ratingEntries.forEach(([movieId, r]) => {
     if (!RATING_WEIGHTS[r.rating]) return;
     const w = RATING_WEIGHTS[r.rating];
     (r.genreIds || []).forEach((id) => { genreAffinity[id] = (genreAffinity[id] || 0) + w; });
+    if (r.originalLanguage) languageAffinity[r.originalLanguage] = (languageAffinity[r.originalLanguage] || 0) + w;
     (r.castIds || []).forEach((id) => { castAffinity[id] = (castAffinity[id] || 0) + w * CAST_WEIGHT_MULT; sourceMovieFor[`cast:${id}`] = movieId; });
     (r.directorIds || []).forEach((id) => { directorAffinity[id] = (directorAffinity[id] || 0) + w * DIRECTOR_WEIGHT_MULT; sourceMovieFor[`director:${id}`] = movieId; });
     (r.writerIds || []).forEach((id) => { writerAffinity[id] = (writerAffinity[id] || 0) + w * WRITER_WEIGHT_MULT; sourceMovieFor[`writer:${id}`] = movieId; });
@@ -60,6 +61,7 @@ export async function GET(request) {
   });
 
   const genreResult = topAndBottom(genreAffinity);
+  const languageResult = topAndBottom(languageAffinity);
   const castResult = topAndBottom(castAffinity);
   const directorResult = topAndBottom(directorAffinity);
   const writerResult = topAndBottom(writerAffinity);
@@ -126,6 +128,7 @@ export async function GET(request) {
       genres: profile.genres || [],
       excludedGenres: profile.excludedGenres || [],
       excludedKeywords: profile.excludedKeywords || [],
+      allowedLanguages: profile.allowedLanguages || [],
       region: profile.region,
       wantsTheaters: profile.wantsTheaters || false,
       isLocalProfile: !!profile.isLocalProfile,
@@ -135,6 +138,8 @@ export async function GET(request) {
     recentRatings,
     topGenreAffinities: genreResult.top.map((e) => ({ genreId: Number(e.id), score: e.score })),
     bottomGenreAffinities: genreResult.bottom.map((e) => ({ genreId: Number(e.id), score: e.score })),
+    topLanguageAffinities: languageResult.top.map((e) => ({ code: e.id, score: e.score })),
+    bottomLanguageAffinities: languageResult.bottom.map((e) => ({ code: e.id, score: e.score })),
     castAffinities: withNames(castResult, "cast"),
     directorAffinities: withNames(directorResult, "director"),
     writerAffinities: withNames(writerResult, "writer"),

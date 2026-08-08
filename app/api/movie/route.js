@@ -21,5 +21,6 @@ export async function GET(request) {
     release_date: data.release_date,
     vote_average: data.vote_average,
     genre_ids: (data.genres || []).map((g) => g.id),
+    original_language: data.original_language || null,
   });
 }

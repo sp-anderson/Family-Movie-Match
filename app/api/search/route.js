@@ -25,6 +25,7 @@ export async function GET(request) {
       year: (m.release_date || "").slice(0, 4),
       poster_path: m.poster_path,
       genre_ids: m.genre_ids || [],
+      original_language: m.original_language || null,
     })),
   });
 }

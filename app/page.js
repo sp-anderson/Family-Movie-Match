@@ -75,6 +75,32 @@ const GENRES = [
   { id: 10751, name: "Family" },
 ];
 
+const LANGUAGES = [
+  { code: "en", name: "English" },
+  { code: "es", name: "Spanish" },
+  { code: "fr", name: "French" },
+  { code: "de", name: "German" },
+  { code: "it", name: "Italian" },
+  { code: "pt", name: "Portuguese" },
+  { code: "ja", name: "Japanese" },
+  { code: "ko", name: "Korean" },
+  { code: "zh", name: "Chinese" },
+  { code: "hi", name: "Hindi" },
+  { code: "ru", name: "Russian" },
+  { code: "ar", name: "Arabic" },
+  { code: "tr", name: "Turkish" },
+  { code: "sv", name: "Swedish" },
+  { code: "da", name: "Danish" },
+  { code: "no", name: "Norwegian" },
+  { code: "pl", name: "Polish" },
+  { code: "nl", name: "Dutch" },
+  { code: "th", name: "Thai" },
+  { code: "vi", name: "Vietnamese" },
+  { code: "id", name: "Indonesian" },
+  { code: "he", name: "Hebrew" },
+  { code: "el", name: "Greek" },
+];
+
 const AVATAR_COLORS = ["bg-cinema-gold", "bg-cinema-orange", "bg-cinema-green", "bg-sky-400", "bg-violet-400", "bg-orange-400"];
 function avatarColor(key) {
   let h = 0;
@@ -483,6 +509,7 @@ export default function Home() {
           movieId: item.candidate.id,
           rating: item.rating,
           genreIds: item.candidate.genre_ids || [],
+          originalLanguage: item.candidate.original_language || null,
           castIds: credits?.castIds || [],
           directorIds: credits?.directorIds || [],
           writerIds: credits?.writerIds || [],
@@ -495,7 +522,7 @@ export default function Home() {
         });
         setRatings((prev) => ({
           ...prev,
-          [item.candidate.id]: { rating: item.rating, ratedAt: Date.now(), genreIds: payload.genreIds, castIds: payload.castIds, directorIds: payload.directorIds, writerIds: payload.writerIds, keywordIds: payload.keywordIds },
+          [item.candidate.id]: { rating: item.rating, ratedAt: Date.now(), genreIds: payload.genreIds, originalLanguage: payload.originalLanguage, castIds: payload.castIds, directorIds: payload.directorIds, writerIds: payload.writerIds, keywordIds: payload.keywordIds },
         }));
       } catch {
         // one failed migration item shouldn't block the rest
@@ -938,6 +965,7 @@ export default function Home() {
   const [servicesInput, setServicesInput] = useState([]);
   const [genresInput, setGenresInput] = useState([]);
   const [excludedGenresInput, setExcludedGenresInput] = useState([]);
+  const [allowedLanguagesInput, setAllowedLanguagesInput] = useState([]); // empty = no restriction
   const [excludedKeywordsInput, setExcludedKeywordsInput] = useState([]); // [{id, name}]
   const [keywordSearchQuery, setKeywordSearchQuery] = useState("");
   const [keywordSearchResults, setKeywordSearchResults] = useState([]);
@@ -1242,6 +1270,7 @@ export default function Home() {
       setServicesInput(profile?.services || []);
       setGenresInput(profile?.genres || []);
       setExcludedGenresInput(profile?.excludedGenres || []);
+      setAllowedLanguagesInput(profile?.allowedLanguages || []);
       setExcludedKeywordsInput(profile?.excludedKeywords || []);
       setFavorites(profile?.favorites || []);
     } catch {
@@ -1276,6 +1305,7 @@ export default function Home() {
       setServicesInput(profile?.services || []);
       setGenresInput(profile?.genres || []);
       setExcludedGenresInput(profile?.excludedGenres || []);
+      setAllowedLanguagesInput(profile?.allowedLanguages || []);
       setExcludedKeywordsInput(profile?.excludedKeywords || []);
       setFavorites(profile?.favorites || []);
       setScreen("setup");
@@ -1296,6 +1326,7 @@ export default function Home() {
     setServicesInput(profile.services || []);
     setGenresInput(profile.genres || []);
     setExcludedGenresInput(profile.excludedGenres || []);
+    setAllowedLanguagesInput(profile.allowedLanguages || []);
     setExcludedKeywordsInput(profile.excludedKeywords || []);
     setFavorites(profile.favorites || []);
     setShowNightPanel(false);
@@ -1631,6 +1662,7 @@ export default function Home() {
       setServicesInput(profile?.services || []);
       setGenresInput(profile?.genres || []);
       setExcludedGenresInput(profile?.excludedGenres || []);
+      setAllowedLanguagesInput(profile?.allowedLanguages || []);
       setExcludedKeywordsInput(profile?.excludedKeywords || []);
       setFavorites(profile?.favorites || []);
       setScreen("setup");
@@ -1762,6 +1794,10 @@ export default function Home() {
     setExcludedGenresInput((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   }
 
+  function toggleLanguage(code) {
+    setAllowedLanguagesInput((s) => (s.includes(code) ? s.filter((x) => x !== code) : [...s, code]));
+  }
+
   async function runKeywordSearch() {
     if (!keywordSearchQuery.trim()) return;
     setKeywordSearching(true);
@@ -1836,7 +1872,7 @@ export default function Home() {
         setError(`You need to be ${PARENT_ROLE_MIN_AGE}+ to be set as a parent — an existing parent can promote you from the Family tab if they choose to.`);
         return;
       }
-      await saveProfile({ region: regionInput, role: finalRole, services: servicesInput, genres: genresInput, excludedGenres: excludedGenresInput, excludedKeywords: excludedKeywordsInput, favorites, wantsTheaters: wantsTheatersInput });
+      await saveProfile({ region: regionInput, role: finalRole, services: servicesInput, genres: genresInput, excludedGenres: excludedGenresInput, excludedKeywords: excludedKeywordsInput, allowedLanguages: allowedLanguagesInput, favorites, wantsTheaters: wantsTheatersInput });
       await saveMember(activeRoomCode, { name: displayName, email, role: finalRole, maxRating: finalMaxRating, services: servicesInput, genres: genresInput, favorites, wantsTheaters: wantsTheatersInput });
       setFamilyMembers((prev) => {
         const rec = { name: displayName, email, role: finalRole, maxRating: finalMaxRating, services: servicesInput, genres: genresInput, favorites, wantsTheaters: wantsTheatersInput };
@@ -2089,9 +2125,9 @@ export default function Home() {
   const DIRECTOR_WEIGHT_MULT = 3;
 
   function computeTasteProfile() {
-    const genre = {}, cast = {}, director = {}, writer = {}, keyword = {};
+    const genre = {}, cast = {}, director = {}, writer = {}, keyword = {}, language = {};
     const now = Date.now();
-    Object.values(ratings).forEach(({ rating, ratedAt, genreIds, castIds, directorIds, writerIds, keywordIds, rewatchCount }) => {
+    Object.values(ratings).forEach(({ rating, ratedAt, genreIds, originalLanguage, castIds, directorIds, writerIds, keywordIds, rewatchCount }) => {
       if (!RATING_WEIGHTS[rating]) return;
       const daysAgo = (now - (ratedAt || now)) / (1000 * 60 * 60 * 24);
       const decay = Math.pow(0.5, daysAgo / AFFINITY_HALF_LIFE_DAYS);
@@ -2101,6 +2137,7 @@ export default function Home() {
       const rewatchMult = 1 + Math.min((rewatchCount || 0) * 0.25, 1);
       const weight = RATING_WEIGHTS[rating] * decay * rewatchMult;
       (genreIds || []).forEach((g) => { genre[g] = (genre[g] || 0) + weight; });
+      if (originalLanguage) language[originalLanguage] = (language[originalLanguage] || 0) + weight;
       (castIds || []).forEach((c) => { cast[c] = (cast[c] || 0) + weight; });
       (directorIds || []).forEach((d) => { director[d] = (director[d] || 0) + weight; });
       (writerIds || []).forEach((w) => { writer[w] = (writer[w] || 0) + weight; });
@@ -2118,6 +2155,7 @@ export default function Home() {
           const dwellMult = Math.max(0.5, Math.min(1.5, dwellSeconds / 3));
           const weight = NO_VOTE_WEIGHT * dwellMult;
           (m.genre_ids || []).forEach((g) => { genre[g] = (genre[g] || 0) + weight; });
+          if (m.original_language) language[m.original_language] = (language[m.original_language] || 0) + weight;
           const credits = detailsCache[m.id];
           if (credits) {
             (credits.castIds || []).forEach((c) => { cast[c] = (cast[c] || 0) + weight; });
@@ -2128,7 +2166,7 @@ export default function Home() {
         }
       });
     }
-    return { genre, cast, director, writer, keyword };
+    return { genre, cast, director, writer, keyword, language };
   }
 
   const KEYWORD_STRONG_DISLIKE_THRESHOLD = -1.0; // roughly 2-3 "not for me" ratings sharing a keyword
@@ -2136,6 +2174,7 @@ export default function Home() {
 
   function scoreMovieByProfile(movie, profile) {
     let score = (movie.genre_ids || []).reduce((sum, g) => sum + (profile.genre[g] || 0), 0);
+    if (movie.original_language) score += profile.language[movie.original_language] || 0;
     // cast/crew/keyword scoring only kicks in for movies we've already
     // fetched credits for (rated movies, or ones the background prefetch
     // reached) — degrades gracefully to genre-only for everything else,
@@ -2211,8 +2250,18 @@ export default function Home() {
         return true;
       });
     }
+    const allowedLanguages = profile?.allowedLanguages || [];
+    if (allowedLanguages.length) {
+      movies = movies.filter((m) => {
+        const familyMateSaidYes = Object.entries(votes[m.id] || {}).some(([memberEmail, choice]) => memberEmail !== email && choice === "yes");
+        if (familyMateSaidYes) return true;
+        // original_language rides along free on every pool movie already —
+        // no credits fetch needed, unlike genre/keyword excludes
+        return !m.original_language || allowedLanguages.includes(m.original_language);
+      });
+    }
     return movies;
-  }, [pool, myVotedIds, myMaxRating, certifications, votes, email, spotlight, reconsidered, profile?.genres, profile?.excludedGenres, profile?.excludedKeywords]);
+  }, [pool, myVotedIds, myMaxRating, certifications, votes, email, spotlight, reconsidered, profile?.genres, profile?.excludedGenres, profile?.excludedKeywords, profile?.allowedLanguages]);
 
   // personalized ordering, built up in fully-enriched batches of 20 instead
   // of scoring the whole pool at once. Every movie in a batch gets its
@@ -2555,8 +2604,9 @@ export default function Home() {
   async function saveRating(movie, rating) {
     const movieId = movie.id;
     const genreIds = movie.genre_ids || [];
+    const originalLanguage = movie.original_language || null;
     // optimistic: get the rating itself saved instantly, backfill credits after
-    setRatings((prev) => ({ ...prev, [movieId]: { rating, ratedAt: Date.now(), genreIds, ...(detailsCache[movieId] || {}) } }));
+    setRatings((prev) => ({ ...prev, [movieId]: { rating, ratedAt: Date.now(), genreIds, originalLanguage, ...(detailsCache[movieId] || {}) } }));
     setRatingPromptMovie(null);
     try {
       let credits = detailsCache[movieId];
@@ -2570,12 +2620,13 @@ export default function Home() {
         movieId,
         rating,
         genreIds,
+        originalLanguage,
         castIds: credits?.castIds || [],
         directorIds: credits?.directorIds || [],
         writerIds: credits?.writerIds || [],
         keywordIds: credits?.keywordIds || [],
       };
-      setRatings((prev) => ({ ...prev, [movieId]: { rating, ratedAt: Date.now(), genreIds, castIds: payload.castIds, directorIds: payload.directorIds, writerIds: payload.writerIds, keywordIds: payload.keywordIds } }));
+      setRatings((prev) => ({ ...prev, [movieId]: { rating, ratedAt: Date.now(), genreIds, originalLanguage, castIds: payload.castIds, directorIds: payload.directorIds, writerIds: payload.writerIds, keywordIds: payload.keywordIds } }));
       await fetch("/api/ratings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3825,6 +3876,11 @@ export default function Home() {
               <div className="mb-5">
                 <h4 className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Genres to avoid</h4>
                 <div className="flex flex-wrap gap-2">{GENRES.map((g) => <Chip key={g.id} variant="orange" active={excludedGenresInput.includes(g.id)} onClick={() => toggleExcludedGenre(g.id)}>{g.name}</Chip>)}</div>
+              </div>
+              <div className="mb-5">
+                <h4 className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Languages you want to see</h4>
+                <p className="text-[11px] text-cinema-mutedDark mb-2">Leave blank for no restriction. Someone else's yes still overrides this.</p>
+                <div className="flex flex-wrap gap-2">{LANGUAGES.map((l) => <Chip key={l.code} active={allowedLanguagesInput.includes(l.code)} onClick={() => toggleLanguage(l.code)}>{l.name}</Chip>)}</div>
               </div>
               <div className="mb-0">
                 <h4 className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Specific things to avoid</h4>

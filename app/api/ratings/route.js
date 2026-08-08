@@ -10,12 +10,12 @@ export async function GET(request) {
   return NextResponse.json({ ratings: ratings || {} });
 }
 
-// POST /api/ratings  body: { email, movieId, rating, genreIds, castIds, directorIds, writerIds, keywordIds }
+// POST /api/ratings  body: { email, movieId, rating, genreIds, originalLanguage, castIds, directorIds, writerIds, keywordIds }
 const REWATCH_MIN_GAP_MS = 24 * 60 * 60 * 1000; // re-rating within a day = correction, not a rewatch
 
 export async function POST(request) {
   const body = await request.json();
-  const { email, movieId, rating, genreIds, castIds, directorIds, writerIds, keywordIds } = body;
+  const { email, movieId, rating, genreIds, originalLanguage, castIds, directorIds, writerIds, keywordIds } = body;
   if (!email || !movieId || ![1, 2, 3, 4].includes(rating)) {
     return NextResponse.json({ error: "email, movieId, and rating (1-4) required" }, { status: 400 });
   }
@@ -27,6 +27,7 @@ export async function POST(request) {
     rating,
     ratedAt: now,
     genreIds: genreIds || existing.genreIds || [],
+    originalLanguage: originalLanguage || existing.originalLanguage || null,
     castIds: castIds || existing.castIds || [],
     directorIds: directorIds || existing.directorIds || [],
     writerIds: writerIds || existing.writerIds || [],

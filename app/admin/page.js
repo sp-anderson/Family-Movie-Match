@@ -32,6 +32,10 @@ const GENRES = [
 function genreName(id) {
   return GENRES.find((g) => g.id === id)?.name || `Genre ${id}`;
 }
+const LANGUAGES = { en: "English", es: "Spanish", fr: "French", de: "German", it: "Italian", pt: "Portuguese", ja: "Japanese", ko: "Korean", zh: "Chinese", hi: "Hindi", ru: "Russian", ar: "Arabic", tr: "Turkish", sv: "Swedish", da: "Danish", no: "Norwegian", pl: "Polish", nl: "Dutch", th: "Thai", vi: "Vietnamese", id: "Indonesian", he: "Hebrew", el: "Greek" };
+function languageName(code) {
+  return LANGUAGES[code] || code;
+}
 
 function Section({ title, children }) {
   return (
@@ -248,6 +252,8 @@ export default function AdminPage() {
                 <div>Votes — yes: {viewAsResult.voteBreakdown.yes}, no: {viewAsResult.voteBreakdown.no}, seen: {viewAsResult.voteBreakdown.seen}</div>
                 <div>Genres they respond to best: {viewAsResult.topGenreAffinities.map((g) => `${genreName(g.genreId)} (${g.score})`).join(", ") || "none yet"}</div>
                 <div>Genres they respond to worst: {viewAsResult.bottomGenreAffinities.map((g) => `${genreName(g.genreId)} (${g.score})`).join(", ") || "none yet"}</div>
+                <div>Languages they respond to best: {viewAsResult.topLanguageAffinities.map((l) => `${languageName(l.code)} (${l.score})`).join(", ") || "none yet"}</div>
+                <div>Languages they respond to worst: {viewAsResult.bottomLanguageAffinities.map((l) => `${languageName(l.code)} (${l.score})`).join(", ") || "none yet"}</div>
                 <div className="mt-2 pt-2 border-t border-neutral-800">
                   <div className="font-bold text-neutral-500 uppercase text-[10px] mb-1">Cast, director, writer, keyword (weighted)</div>
                   <div>Directors: {viewAsResult.directorAffinities.top.map((d) => `${d.name} (${d.score})`).join(", ") || "none yet"}</div>
@@ -257,6 +263,7 @@ export default function AdminPage() {
                   <div>Keywords they avoid: {viewAsResult.keywordAffinities.bottom.map((k) => `${k.name} (${k.score})`).join(", ") || "none yet"}</div>
                 </div>
                 <div>Excludes — genres: {viewAsResult.settings.excludedGenres.join(", ") || "none"}; keywords: {viewAsResult.settings.excludedKeywords.map((k) => k.name).join(", ") || "none"}</div>
+                <div>Allowed languages: {viewAsResult.settings.allowedLanguages.map(languageName).join(", ") || "no restriction"}</div>
               </div>
             )}
           </div>
