@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
-import { Heart, X, Users, Settings, Play, Sparkles, Film, LogOut, RefreshCw, Star, Ticket, Eye, Clock, Compass, RotateCcw, ShoppingCart, Search, Pencil, ChevronDown } from "lucide-react";
+import { Heart, X, Users, Settings, Play, Sparkles, Film, LogOut, RefreshCw, Star, Ticket, Eye, Clock, Compass, RotateCcw, ShoppingCart, Search, Pencil, ChevronDown, Check } from "lucide-react";
 
 const SERVICES = [
   { id: 8, name: "Netflix" },
@@ -130,6 +130,65 @@ function TheaterBadge() {
     <span className="absolute top-2 right-2 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-cinema-orange text-cinema-ink shadow">
       IN THEATERS
     </span>
+  );
+}
+
+function SelectableList({ allOptions, selected, onAdd, onRemove, addLabel, getId, getName, emptyLabel }) {
+  const [expanded, setExpanded] = useState(false);
+  const [query, setQuery] = useState("");
+  const selectedItems = allOptions.filter((o) => selected.includes(getId(o)));
+  const remaining = allOptions.filter((o) => !selected.includes(getId(o)) && getName(o).toLowerCase().includes(query.trim().toLowerCase()));
+  return (
+    <div>
+      <div className="flex flex-wrap gap-2 mb-2">
+        {selectedItems.map((o) => (
+          <button
+            key={getId(o)}
+            onClick={() => onRemove(getId(o))}
+            className="flex items-center gap-1.5 pl-2.5 pr-2 py-1.5 rounded-full text-sm font-bold border-2 bg-cinema-gold border-cinema-gold text-cinema-ink"
+          >
+            <Check className="w-3.5 h-3.5" /> {getName(o)} <X className="w-3 h-3" />
+          </button>
+        ))}
+        {selectedItems.length === 0 && <span className="text-xs text-cinema-mutedDark">{emptyLabel || "None selected yet"}</span>}
+      </div>
+      {!expanded ? (
+        <button onClick={() => setExpanded(true)} className="text-xs font-bold text-cinema-gold hover:underline">
+          {addLabel}
+        </button>
+      ) : (
+        <div>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search…"
+            autoFocus
+            className="w-full mb-2 px-3 py-2 rounded-lg bg-cinema-bg border border-cinema-border text-stone-50 text-sm outline-none focus:border-cinema-gold"
+          />
+          <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
+            {remaining.map((o) => (
+              <button
+                key={getId(o)}
+                onClick={() => onAdd(getId(o))}
+                className="px-3 py-1.5 rounded-full text-sm font-bold border-2 border-cinema-border text-cinema-mutedLight hover:border-cinema-gold"
+              >
+                + {getName(o)}
+              </button>
+            ))}
+            {remaining.length === 0 && <span className="text-xs text-cinema-mutedDark py-1">No matches</span>}
+          </div>
+          <button
+            onClick={() => {
+              setExpanded(false);
+              setQuery("");
+            }}
+            className="text-xs font-bold text-cinema-mutedDark hover:text-cinema-mutedLight mt-2"
+          >
+            Done
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1792,9 +1851,11 @@ export default function Home() {
   }
   function toggleGenre(id) {
     setGenresInput((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+    setExcludedGenresInput((s) => s.filter((x) => x !== id));
   }
   function toggleExcludedGenre(id) {
     setExcludedGenresInput((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+    setGenresInput((s) => s.filter((x) => x !== id));
   }
 
   function toggleLanguage(code) {
@@ -3463,10 +3524,10 @@ export default function Home() {
           </div>
         )}
       <div className="px-5 pt-5 pb-3 flex items-center justify-between border-b border-cinema-border/60">
-        <div className="flex items-center gap-2">
+        <button onClick={() => setScreen("swipe")} className="flex items-center gap-2">
           <Film className="w-6 h-6 text-cinema-gold" />
           <h1 className="text-2xl text-cinema-bronze" style={displayFont}>Family Movie Match</h1>
-        </div>
+        </button>
         {profile?.group && (
           <button
             onClick={() => setShowProfileSwitcher(true)}
@@ -3860,7 +3921,16 @@ export default function Home() {
               </div>
               <div className="mb-5">
                 <h4 className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Services you're subscribed to</h4>
-                <div className="flex flex-wrap gap-2">{[...availableProviders].sort((a, b) => a.name.localeCompare(b.name)).map((s) => <Chip key={s.id} active={servicesInput.includes(s.id)} onClick={() => toggleService(s.id)}>{s.name}</Chip>)}</div>
+                <SelectableList
+                  allOptions={availableProviders}
+                  selected={servicesInput}
+                  onAdd={toggleService}
+                  onRemove={toggleService}
+                  addLabel="+ Add a streaming service"
+                  emptyLabel="No services added yet"
+                  getId={(s) => s.id}
+                  getName={(s) => s.name}
+                />
               </div>
               <div className="mb-0">
                 <h4 className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Going out to the movies?</h4>
@@ -3883,7 +3953,16 @@ export default function Home() {
               <div className="mb-5">
                 <h4 className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Languages you want to see</h4>
                 <p className="text-[11px] text-cinema-mutedDark mb-2">Leave blank for no restriction. Someone else's yes still overrides this.</p>
-                <div className="flex flex-wrap gap-2">{LANGUAGES.map((l) => <Chip key={l.code} active={allowedLanguagesInput.includes(l.code)} onClick={() => toggleLanguage(l.code)}>{l.name}</Chip>)}</div>
+                <SelectableList
+                  allOptions={LANGUAGES}
+                  selected={allowedLanguagesInput}
+                  onAdd={toggleLanguage}
+                  onRemove={toggleLanguage}
+                  addLabel="+ Add a language"
+                  emptyLabel="No restriction — all languages shown"
+                  getId={(l) => l.code}
+                  getName={(l) => l.name}
+                />
               </div>
               <div className="mb-0">
                 <h4 className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Specific things to avoid</h4>
