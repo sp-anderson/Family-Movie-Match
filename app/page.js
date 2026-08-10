@@ -1121,6 +1121,9 @@ export default function Home() {
       setWantsTheatersInput(data.profile.wantsTheaters || false);
       setServicesInput(data.profile.services || []);
       setGenresInput(data.profile.genres || []);
+      setExcludedGenresInput(data.profile.excludedGenres || []);
+      setExcludedKeywordsInput(data.profile.excludedKeywords || []);
+      setAllowedLanguagesInput(data.profile.allowedLanguages || []);
       setFavorites(data.profile.favorites || []);
 
       const familyData = await loadGroup(data.profile.group);
