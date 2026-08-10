@@ -4150,7 +4150,7 @@ export default function Home() {
                   }}
                   className={"rounded-2xl bg-cinema-card text-cinema-ink overflow-hidden shadow-xl select-none md:flex md:items-start" + (rating ? "" : " cursor-grab active:cursor-grabbing")}
                 >
-                  <div className="relative w-full aspect-[2/3] bg-stone-200 md:w-2/5 md:flex-shrink-0">
+                  <div className="relative w-full aspect-[2/3] bg-stone-200 md:w-1/2 md:flex-shrink-0">
                     {isNewRelease(displayMovie.release_date) && <NewBadge />}
                     {displayMovie._inTheaters && <TheaterBadge />}
                     {displayMovie.poster_path ? (
@@ -4227,7 +4227,7 @@ export default function Home() {
                       </div>
                     )}
                   </div>
-                  <div className="p-4 md:w-3/5 md:max-h-[80vh] md:overflow-y-auto">
+                  <div className="p-4 md:w-1/2 md:max-h-[80vh] md:overflow-y-auto">
                     <div className="font-extrabold text-lg leading-snug">{displayMovie.title}</div>
                     {!rating && currentMovieNudges.length > 0 && (
                       <div className="text-xs text-cinema-gold font-bold mb-1">
