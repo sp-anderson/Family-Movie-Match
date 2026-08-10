@@ -4227,7 +4227,7 @@ export default function Home() {
                       </div>
                     )}
                   </div>
-                  <div className="p-4 md:w-1/2 md:max-h-[80vh] md:overflow-y-auto">
+                  <div className="p-4 md:w-1/2 md:max-h-[500px] md:overflow-y-auto">
                     <div className="font-extrabold text-lg leading-snug">{displayMovie.title}</div>
                     {!rating && currentMovieNudges.length > 0 && (
                       <div className="text-xs text-cinema-gold font-bold mb-1">
