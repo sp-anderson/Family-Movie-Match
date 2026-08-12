@@ -300,6 +300,7 @@ function FilterSortBar({ sort, setSort, genreFilter, setGenreFilter, sortOptions
           className="text-xs font-bold px-2 py-1 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50"
         >
           <option value="">Default</option>
+          {sortOptions.includes("match") && <option value="match">Match %</option>}
           {sortOptions.includes("year") && <option value="year">Release year</option>}
           {sortOptions.includes("score") && <option value="score">User score</option>}
           {sortOptions.includes("title") && <option value="title">Title A-Z</option>}
@@ -946,7 +947,7 @@ export default function Home() {
   const [instantMatches, setInstantMatches] = useState([]); // movies both people in a movie-night already said yes to, historically
   const [detailsCache, setDetailsCache] = useState({}); // movieId -> { runtime, cast }
 
-  const [matchesSort, setMatchesSort] = useState({ key: "", dir: "desc" });
+  const [matchesSort, setMatchesSort] = useState({ key: "match", dir: "desc" });
   const [matchesGenreFilter, setMatchesGenreFilter] = useState([]);
   const [matchesSearch, setMatchesSearch] = useState("");
   const [expandedOverviews, setExpandedOverviews] = useState({}); // { movieId: true } — Matches card descriptions can be expanded on tap
@@ -2513,6 +2514,9 @@ export default function Home() {
       } else if (sort.key === "title") {
         av = a.title.toLowerCase();
         bv = b.title.toLowerCase();
+      } else if (sort.key === "match") {
+        av = matchScoreFor(a.id) ?? -1;
+        bv = matchScoreFor(b.id) ?? -1;
       }
       if (av < bv) return sort.dir === "asc" ? -1 : 1;
       if (av > bv) return sort.dir === "asc" ? 1 : -1;
@@ -3024,7 +3028,20 @@ export default function Home() {
         <div className="min-w-0 flex-1">
           <div className="font-extrabold">{m.title}</div>
           <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
-          <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
+          <p
+            onClick={() => setExpandedOverviews((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
+            className={"text-xs text-cinema-muted cursor-pointer " + (expandedOverviews[m.id] ? "" : "line-clamp-2")}
+          >
+            {m.overview}
+          </p>
+          {m.overview && (
+            <button
+              onClick={() => setExpandedOverviews((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
+              className="text-[10px] font-bold text-cinema-gold hover:underline"
+            >
+              {expandedOverviews[m.id] ? "Show less" : "Read more"}
+            </button>
+          )}
           <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
           <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
           <TrailerButton movieId={m.id} />
@@ -4211,6 +4228,15 @@ export default function Home() {
                   </div>
                 )}
                 <div className="md:flex md:items-center md:gap-4">
+                {!rating && (
+                  <button
+                    onClick={() => commitSwipe("no")}
+                    aria-label="No"
+                    className="hidden md:flex flex-shrink-0 order-first w-16 h-16 rounded-full bg-cinema-orange hover:bg-cinema-orange/80 text-white items-center justify-center shadow-lg"
+                  >
+                    <X className="w-7 h-7" strokeWidth={3} />
+                  </button>
+                )}
                 <div
                   ref={cardRef}
                   onPointerDown={rating ? undefined : onPointerDown}
@@ -4252,7 +4278,7 @@ export default function Home() {
                       <>
                         <button
                           onClick={() => commitSwipe("no")}
-                          className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/40 hover:bg-cinema-orange/80 text-white flex items-center justify-center backdrop-blur-sm"
+                          className="md:hidden absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/40 hover:bg-cinema-orange/80 text-white flex items-center justify-center backdrop-blur-sm"
                           aria-label="No"
                         >
                           <X className="w-5 h-5" />
@@ -4415,7 +4441,7 @@ export default function Home() {
                     setGenreFilter={setMatchesGenreFilter}
                     availabilityFilter={matchesAvailabilityFilter}
                     setAvailabilityFilter={setMatchesAvailabilityFilter}
-                    sortOptions={["year", "score", "title"]}
+                    sortOptions={["match", "year", "score", "title"]}
                   />
                 )}
               </>
@@ -4562,7 +4588,20 @@ export default function Home() {
                       <div className="min-w-0 flex-1">
                         <div className="font-extrabold">{m.title}</div>
                         <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
-                        <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
+                        <p
+            onClick={() => setExpandedOverviews((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
+            className={"text-xs text-cinema-muted cursor-pointer " + (expandedOverviews[m.id] ? "" : "line-clamp-2")}
+          >
+            {m.overview}
+          </p>
+          {m.overview && (
+            <button
+              onClick={() => setExpandedOverviews((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
+              className="text-[10px] font-bold text-cinema-gold hover:underline"
+            >
+              {expandedOverviews[m.id] ? "Show less" : "Read more"}
+            </button>
+          )}
                         <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
                         <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
                         <TrailerButton movieId={m.id} />
@@ -4591,7 +4630,20 @@ export default function Home() {
                       <div className="min-w-0 flex-1">
                         <div className="font-extrabold">{m.title}</div>
                         <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
-                        <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
+                        <p
+            onClick={() => setExpandedOverviews((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
+            className={"text-xs text-cinema-muted cursor-pointer " + (expandedOverviews[m.id] ? "" : "line-clamp-2")}
+          >
+            {m.overview}
+          </p>
+          {m.overview && (
+            <button
+              onClick={() => setExpandedOverviews((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
+              className="text-[10px] font-bold text-cinema-gold hover:underline"
+            >
+              {expandedOverviews[m.id] ? "Show less" : "Read more"}
+            </button>
+          )}
                         <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
                         <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
                         <TrailerButton movieId={m.id} />
@@ -4618,7 +4670,20 @@ export default function Home() {
                       <div className="min-w-0 flex-1">
                         <div className="font-extrabold">{m.title}</div>
                         <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
-                        <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
+                        <p
+            onClick={() => setExpandedOverviews((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
+            className={"text-xs text-cinema-muted cursor-pointer " + (expandedOverviews[m.id] ? "" : "line-clamp-2")}
+          >
+            {m.overview}
+          </p>
+          {m.overview && (
+            <button
+              onClick={() => setExpandedOverviews((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
+              className="text-[10px] font-bold text-cinema-gold hover:underline"
+            >
+              {expandedOverviews[m.id] ? "Show less" : "Read more"}
+            </button>
+          )}
                         <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
                         <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
                         <TrailerButton movieId={m.id} />
@@ -4647,7 +4712,20 @@ export default function Home() {
                       <div className="min-w-0 flex-1">
                         <div className="font-extrabold">{m.title}</div>
                         <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
-                        <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
+                        <p
+            onClick={() => setExpandedOverviews((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
+            className={"text-xs text-cinema-muted cursor-pointer " + (expandedOverviews[m.id] ? "" : "line-clamp-2")}
+          >
+            {m.overview}
+          </p>
+          {m.overview && (
+            <button
+              onClick={() => setExpandedOverviews((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
+              className="text-[10px] font-bold text-cinema-gold hover:underline"
+            >
+              {expandedOverviews[m.id] ? "Show less" : "Read more"}
+            </button>
+          )}
                         <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
                         <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
                         <TrailerButton movieId={m.id} />
@@ -4688,7 +4766,20 @@ export default function Home() {
                           <div className="min-w-0 flex-1">
                             <div className="font-extrabold">{m.title}</div>
                             <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
-                            <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
+                            <p
+            onClick={() => setExpandedOverviews((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
+            className={"text-xs text-cinema-muted cursor-pointer " + (expandedOverviews[m.id] ? "" : "line-clamp-2")}
+          >
+            {m.overview}
+          </p>
+          {m.overview && (
+            <button
+              onClick={() => setExpandedOverviews((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
+              className="text-[10px] font-bold text-cinema-gold hover:underline"
+            >
+              {expandedOverviews[m.id] ? "Show less" : "Read more"}
+            </button>
+          )}
                             <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
                             <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
                             <TrailerButton movieId={m.id} />
@@ -4722,7 +4813,20 @@ export default function Home() {
                         <div className="min-w-0 flex-1">
                           <div className="font-extrabold">{m.title}</div>
                           <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
-                          <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
+                          <p
+            onClick={() => setExpandedOverviews((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
+            className={"text-xs text-cinema-muted cursor-pointer " + (expandedOverviews[m.id] ? "" : "line-clamp-2")}
+          >
+            {m.overview}
+          </p>
+          {m.overview && (
+            <button
+              onClick={() => setExpandedOverviews((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
+              className="text-[10px] font-bold text-cinema-gold hover:underline"
+            >
+              {expandedOverviews[m.id] ? "Show less" : "Read more"}
+            </button>
+          )}
                           <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
                           <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
                           <TrailerButton movieId={m.id} />
