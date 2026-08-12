@@ -4188,7 +4188,7 @@ export default function Home() {
         )}
 
         {screen === "swipe" && profile?.group && (
-          <div className="max-w-sm md:max-w-2xl mx-auto">
+          <div className="max-w-sm md:max-w-4xl mx-auto">
             {myMaxRating && (
               <div className="text-center text-[11px] font-bold text-cinema-gold mb-2">
                 Showing movies rated {myMaxRating} and under
