@@ -302,6 +302,7 @@ function FilterSortBar({ sort, setSort, genreFilter, setGenreFilter, sortOptions
         >
           <option value="">Default</option>
           {sortOptions.includes("match") && <option value="match">Match %</option>}
+          {sortOptions.includes("fit") && <option value="fit">Fit %</option>}
           {sortOptions.includes("year") && <option value="year">Release year</option>}
           {sortOptions.includes("score") && <option value="score">User score</option>}
           {sortOptions.includes("title") && <option value="title">Title A-Z</option>}
@@ -955,7 +956,7 @@ export default function Home() {
   const [matchesAvailabilityFilter, setMatchesAvailabilityFilter] = useState([]);
   const [showMatchesFilters, setShowMatchesFilters] = useState(false);
 
-  const [historySort, setHistorySort] = useState({ key: "", dir: "desc" });
+  const [historySort, setHistorySort] = useState({ key: "fit", dir: "desc" });
   const [historyGenreFilter, setHistoryGenreFilter] = useState([]);
   const [historyAvailabilityFilter, setHistoryAvailabilityFilter] = useState([]);
   const [showHistoryFilters, setShowHistoryFilters] = useState(false);
@@ -2445,6 +2446,9 @@ export default function Home() {
       } else if (sort.key === "match") {
         av = matchScoreFor(a.id) ?? -1;
         bv = matchScoreFor(b.id) ?? -1;
+      } else if (sort.key === "fit") {
+        av = fitScoreFor(a.id) ?? -1;
+        bv = fitScoreFor(b.id) ?? -1;
       }
       if (av < bv) return sort.dir === "asc" ? -1 : 1;
       if (av > bv) return sort.dir === "asc" ? 1 : -1;
@@ -2771,6 +2775,28 @@ export default function Home() {
 
   function matchScoreFor(movieId) {
     return movieId in matchScores ? matchScores[movieId] : null;
+  }
+
+  // "fit" — your own score, shown on My Movies (Yes / Review Later) rather
+  // than Matches. Same computation, same endpoint, just called with only
+  // yourself — deliberately different wording from "match" so the two
+  // don't get confused: this is a personal percentile, not a
+  // minimum-across-everyone comparison.
+  const [myFitScores, setMyFitScores] = useState({});
+  useEffect(() => {
+    if (!activeRoomCode || !email) return;
+    fetch("/api/match-scores", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: activeRoomCode, emails: [email] }),
+    })
+      .then((r) => r.json())
+      .then((d) => setMyFitScores(d.scores || {}))
+      .catch(() => setMyFitScores({}));
+  }, [activeRoomCode, email]);
+
+  function fitScoreFor(movieId) {
+    return movieId in myFitScores ? myFitScores[movieId] : null;
   }
 
   function toggleMatchWith(otherEmail) {
@@ -4448,7 +4474,7 @@ export default function Home() {
                 setGenreFilter={setHistoryGenreFilter}
                 availabilityFilter={historyAvailabilityFilter}
                 setAvailabilityFilter={setHistoryAvailabilityFilter}
-                sortOptions={["year", "score", "title"]}
+                sortOptions={["fit", "year", "score", "title"]}
               />
             )}
 
@@ -4491,7 +4517,14 @@ export default function Home() {
                     <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
                       {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
                       <div className="min-w-0 flex-1">
-                        <div className="font-extrabold">{m.title}</div>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="font-extrabold">{m.title}</div>
+                          {fitScoreFor(m.id) !== null && (
+                            <span className="flex-shrink-0 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-cinema-green/15 text-cinema-green border border-cinema-green/40">
+                              {fitScoreFor(m.id)}% fit
+                            </span>
+                          )}
+                        </div>
                         <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
                         <p
             onClick={() => setExpandedOverviews((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
@@ -4669,7 +4702,14 @@ export default function Home() {
                         <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-gold/40">
                           {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
                           <div className="min-w-0 flex-1">
-                            <div className="font-extrabold">{m.title}</div>
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="font-extrabold">{m.title}</div>
+                              {fitScoreFor(m.id) !== null && (
+                                <span className="flex-shrink-0 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-cinema-green/15 text-cinema-green border border-cinema-green/40">
+                                  {fitScoreFor(m.id)}% fit
+                                </span>
+                              )}
+                            </div>
                             <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
                             <p
             onClick={() => setExpandedOverviews((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
@@ -4716,7 +4756,14 @@ export default function Home() {
                       <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
                         {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
                         <div className="min-w-0 flex-1">
-                          <div className="font-extrabold">{m.title}</div>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="font-extrabold">{m.title}</div>
+                            {fitScoreFor(m.id) !== null && (
+                              <span className="flex-shrink-0 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-cinema-green/15 text-cinema-green border border-cinema-green/40">
+                                {fitScoreFor(m.id)}% fit
+                              </span>
+                            )}
+                          </div>
                           <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
                           <p
             onClick={() => setExpandedOverviews((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
