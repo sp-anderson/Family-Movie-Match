@@ -4135,15 +4135,14 @@ export default function Home() {
                   </div>
                 )}
                 <div className="md:flex md:items-center md:gap-4">
-                {!rating && (
-                  <button
-                    onClick={() => commitSwipe("no")}
-                    aria-label="No"
-                    className="hidden md:flex flex-shrink-0 order-first w-16 h-16 rounded-full bg-cinema-orange hover:bg-cinema-orange/80 text-white items-center justify-center shadow-lg"
-                  >
-                    <X className="w-7 h-7" strokeWidth={3} />
-                  </button>
-                )}
+                <button
+                  onClick={() => commitSwipe("no")}
+                  aria-label="No"
+                  disabled={!!rating}
+                  className={"hidden md:flex flex-shrink-0 order-first w-16 h-16 rounded-full bg-cinema-orange hover:bg-cinema-orange/80 text-white items-center justify-center shadow-lg" + (rating ? " invisible" : "")}
+                >
+                  <X className="w-7 h-7" strokeWidth={3} />
+                </button>
                 <div
                   ref={cardRef}
                   onPointerDown={rating ? undefined : onPointerDown}
@@ -4255,15 +4254,14 @@ export default function Home() {
                     <SpotlightControl movieId={displayMovie.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} hideLabel={currentMovieNudges.length > 0} />
                   </div>
                 </div>
-                {!rating && (
-                  <button
-                    onClick={() => commitSwipe("yes")}
-                    aria-label="Yes"
-                    className="hidden md:flex flex-shrink-0 w-16 h-16 rounded-full bg-cinema-green hover:bg-cinema-green/80 text-white items-center justify-center shadow-lg"
-                  >
-                    <Heart className="w-7 h-7" fill="currentColor" />
-                  </button>
-                )}
+                <button
+                  onClick={() => commitSwipe("yes")}
+                  aria-label="Yes"
+                  disabled={!!rating}
+                  className={"hidden md:flex flex-shrink-0 w-16 h-16 rounded-full bg-cinema-green hover:bg-cinema-green/80 text-white items-center justify-center shadow-lg" + (rating ? " invisible" : "")}
+                >
+                  <Heart className="w-7 h-7" fill="currentColor" />
+                </button>
                 </div>
                 {!rating && (
                   <>
