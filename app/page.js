@@ -3631,7 +3631,7 @@ export default function Home() {
         </div>
       )}
 
-      <div className="p-5 max-w-2xl mx-auto">
+      <div className={"p-5 mx-auto " + (screen === "swipe" ? "max-w-sm md:max-w-4xl" : "max-w-2xl")}>
         {screen === "dob" && (
           <div className="max-w-sm mx-auto py-8">
             <h2 className="text-xl text-cinema-bronze mb-2" style={displayFont}>One quick thing first</h2>
