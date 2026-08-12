@@ -949,6 +949,7 @@ export default function Home() {
   const [matchesSort, setMatchesSort] = useState({ key: "", dir: "desc" });
   const [matchesGenreFilter, setMatchesGenreFilter] = useState([]);
   const [matchesSearch, setMatchesSearch] = useState("");
+  const [expandedOverviews, setExpandedOverviews] = useState({}); // { movieId: true } — Matches card descriptions can be expanded on tap
   const [matchesAvailabilityFilter, setMatchesAvailabilityFilter] = useState([]);
   const [showMatchesFilters, setShowMatchesFilters] = useState(false);
 
@@ -2188,10 +2189,10 @@ export default function Home() {
   const WRITER_WEIGHT_MULT = 2;
   const DIRECTOR_WEIGHT_MULT = 3;
 
-  function computeTasteProfile() {
+  function computeTasteProfileFor(ratingsObj, votingEmail) {
     const genre = {}, cast = {}, director = {}, writer = {}, keyword = {}, language = {};
     const now = Date.now();
-    Object.values(ratings).forEach(({ rating, ratedAt, genreIds, originalLanguage, castIds, directorIds, writerIds, keywordIds, rewatchCount }) => {
+    Object.values(ratingsObj || {}).forEach(({ rating, ratedAt, genreIds, originalLanguage, castIds, directorIds, writerIds, keywordIds, rewatchCount }) => {
       if (!RATING_WEIGHTS[rating]) return;
       const daysAgo = (now - (ratedAt || now)) / (1000 * 60 * 60 * 24);
       const decay = Math.pow(0.5, daysAgo / AFFINITY_HALF_LIFE_DAYS);
@@ -2209,13 +2210,16 @@ export default function Home() {
     });
     if (pool) {
       pool.movies.forEach((m) => {
-        if ((votes[m.id] || {})[email] === "no") {
+        if ((votes[m.id] || {})[votingEmail] === "no") {
           // dwell time as a confidence signal: a near-instant swipe is more
           // reflexive (poster/title alone), a longer look before deciding
           // reflects genuine engagement with the content — so it counts for
           // more either way. Baseline ~3s glance, clamped so an outlier
-          // (phone left open, etc.) can't distort things too far.
-          const dwellSeconds = (dwellTimes[m.id] || 3000) / 1000;
+          // (phone left open, etc.) can't distort things too far. Only
+          // tracked for the current user's own browsing — for anyone else,
+          // fall back to the same default assumption used when unknown.
+          const dwellMs = votingEmail === email ? dwellTimes[m.id] : undefined;
+          const dwellSeconds = (dwellMs || 3000) / 1000;
           const dwellMult = Math.max(0.5, Math.min(1.5, dwellSeconds / 3));
           const weight = NO_VOTE_WEIGHT * dwellMult;
           (m.genre_ids || []).forEach((g) => { genre[g] = (genre[g] || 0) + weight; });
@@ -2231,6 +2235,10 @@ export default function Home() {
       });
     }
     return { genre, cast, director, writer, keyword, language };
+  }
+
+  function computeTasteProfile() {
+    return computeTasteProfileFor(ratings, email);
   }
 
   const KEYWORD_STRONG_DISLIKE_THRESHOLD = -1.0; // roughly 2-3 "not for me" ratings sharing a keyword
@@ -2809,6 +2817,51 @@ export default function Home() {
   const consideredEmails = matchWith === null ? otherMembers.map((m) => m.email) : matchWith;
   const consideredMembers = [{ email }, ...otherMembers.filter((m) => consideredEmails.includes(m.email))];
 
+  const [otherMemberRatings, setOtherMemberRatings] = useState({}); // { email: ratingsObj } — fetched lazily for whoever's selected in "Matching with"
+  useEffect(() => {
+    const toFetch = consideredEmails.filter((e) => !(e in otherMemberRatings));
+    toFetch.forEach((memberEmail) => {
+      fetch(`/api/ratings?email=${encodeURIComponent(memberEmail)}`)
+        .then((r) => r.json())
+        .then((d) => setOtherMemberRatings((prev) => ({ ...prev, [memberEmail]: d.ratings || {} })))
+        .catch(() => setOtherMemberRatings((prev) => ({ ...prev, [memberEmail]: {} })));
+    });
+    // eslint-disable-next-line
+  }, [consideredEmails.join(",")]);
+
+  // percentile rank of every pool movie against each relevant person's own
+  // taste profile — expressing "would they like this" relative to their
+  // own range, since a raw score means something different depending on
+  // how much that person has rated
+  const percentileMaps = useMemo(() => {
+    if (!pool) return {};
+    const relevantEmails = [email, ...consideredEmails];
+    const maps = {};
+    relevantEmails.forEach((personEmail) => {
+      const personRatings = personEmail === email ? ratings : otherMemberRatings[personEmail];
+      if (!personRatings) return; // not fetched yet
+      const profile = computeTasteProfileFor(personRatings, personEmail);
+      const scored = pool.movies.map((m) => ({ id: m.id, score: scoreMovieByProfile(m, profile) }));
+      scored.sort((a, b) => a.score - b.score);
+      const map = new Map();
+      scored.forEach((item, idx) => {
+        map.set(item.id, scored.length > 1 ? Math.round((idx / (scored.length - 1)) * 100) : 100);
+      });
+      maps[personEmail] = map;
+    });
+    return maps;
+    // eslint-disable-next-line
+  }, [pool, ratings, otherMemberRatings, consideredEmails.join(","), email]);
+
+  function matchScoreFor(movieId) {
+    const relevantEmails = [email, ...consideredEmails];
+    const scores = relevantEmails.map((e) => percentileMaps[e]?.get(movieId));
+    if (scores.some((s) => s === undefined)) return null; // still loading someone's data
+    // minimum, not average — a "we'd both like this" pick is limited by
+    // whoever likes it least, not softened by whoever likes it most
+    return Math.min(...scores);
+  }
+
   function toggleMatchWith(otherEmail) {
     const base = matchWith === null ? otherMembers.map((m) => m.email) : matchWith;
     setMatchWith(base.includes(otherEmail) ? base.filter((e) => e !== otherEmail) : [...base, otherEmail]);
@@ -2932,10 +2985,30 @@ export default function Home() {
           </div>
         )}
         <div className="min-w-0">
-          <div className="font-extrabold flex items-center gap-1"><Ticket className="w-4 h-4 text-cinema-gold flex-shrink-0" /> {m.title}</div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="font-extrabold flex items-center gap-1"><Ticket className="w-4 h-4 text-cinema-gold flex-shrink-0" /> {m.title}</div>
+            {matchScoreFor(m.id) !== null && (
+              <span className="flex-shrink-0 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-cinema-gold/15 text-cinema-gold border border-cinema-gold/40">
+                {matchScoreFor(m.id)}% match
+              </span>
+            )}
+          </div>
           {m._because && <div className="text-[11px] text-cinema-orange font-bold">Because {m._becauseName || "your family"} liked {m._because}</div>}
           <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
-          <p className="text-xs text-cinema-muted line-clamp-2">{m.overview}</p>
+          <p
+            onClick={() => setExpandedOverviews((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
+            className={"text-xs text-cinema-muted cursor-pointer " + (expandedOverviews[m.id] ? "" : "line-clamp-2")}
+          >
+            {m.overview}
+          </p>
+          {m.overview && (
+            <button
+              onClick={() => setExpandedOverviews((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
+              className="text-[10px] font-bold text-cinema-gold hover:underline"
+            >
+              {expandedOverviews[m.id] ? "Show less" : "Read more"}
+            </button>
+          )}
           <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
           <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
           <TrailerButton movieId={m.id} />
@@ -4137,6 +4210,7 @@ export default function Home() {
                     </button>
                   </div>
                 )}
+                <div className="md:flex md:items-center md:gap-4">
                 <div
                   ref={cardRef}
                   onPointerDown={rating ? undefined : onPointerDown}
@@ -4148,7 +4222,7 @@ export default function Home() {
                     transition: draggingRef.current ? "none" : "transform 0.2s ease",
                     touchAction: rating ? "auto" : "pan-y",
                   }}
-                  className={"rounded-2xl bg-cinema-card text-cinema-ink overflow-hidden shadow-xl select-none md:flex md:items-start" + (rating ? "" : " cursor-grab active:cursor-grabbing")}
+                  className={"rounded-2xl bg-cinema-card text-cinema-ink overflow-hidden shadow-xl select-none md:flex-1 md:flex md:items-start" + (rating ? "" : " cursor-grab active:cursor-grabbing")}
                 >
                   <div className="relative w-full aspect-[2/3] bg-stone-200 md:w-1/2 md:h-[500px] md:flex-shrink-0">
                     {isNewRelease(displayMovie.release_date) && <NewBadge />}
@@ -4185,7 +4259,7 @@ export default function Home() {
                         </button>
                         <button
                           onClick={() => commitSwipe("yes")}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/40 hover:bg-cinema-green/80 text-white flex items-center justify-center backdrop-blur-sm"
+                          className="md:hidden absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/40 hover:bg-cinema-green/80 text-white flex items-center justify-center backdrop-blur-sm"
                           aria-label="Yes"
                         >
                           <Heart className="w-5 h-5" />
@@ -4247,6 +4321,16 @@ export default function Home() {
                     )}
                     <SpotlightControl movieId={displayMovie.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} hideLabel={currentMovieNudges.length > 0} />
                   </div>
+                </div>
+                {!rating && (
+                  <button
+                    onClick={() => commitSwipe("yes")}
+                    aria-label="Yes"
+                    className="hidden md:flex flex-shrink-0 w-16 h-16 rounded-full bg-cinema-green hover:bg-cinema-green/80 text-white items-center justify-center shadow-lg"
+                  >
+                    <Heart className="w-7 h-7" fill="currentColor" />
+                  </button>
+                )}
                 </div>
                 {!rating && (
                   <>
