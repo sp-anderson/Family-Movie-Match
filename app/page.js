@@ -275,11 +275,23 @@ function ProviderRow({ movieId, region, inTheaters }) {
   return (
     <div className="flex flex-wrap gap-1 mt-1">
       {inTheaters && <span className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-orange/20 text-cinema-orange font-bold">In theaters</span>}
-      {providers.map((p) => (
-        <span key={p.id} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-green/20 text-cinema-green font-bold">
-          {p.name}
-        </span>
-      ))}
+      {providers.map((p) =>
+        data.link ? (
+          <a
+            key={p.id}
+            href={data.link}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-green/20 text-cinema-green font-bold hover:bg-cinema-green/30"
+          >
+            {p.name}
+          </a>
+        ) : (
+          <span key={p.id} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-green/20 text-cinema-green font-bold">
+            {p.name}
+          </span>
+        )
+      )}
     </div>
   );
 }
