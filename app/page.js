@@ -2971,7 +2971,14 @@ export default function Home() {
       <div key={m.id} className="flex gap-3 bg-cinema-panel rounded-xl p-3 border border-cinema-border">
         {m.poster_path && <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} className="w-16 h-24 object-cover rounded-lg flex-shrink-0" alt={m.title} />}
         <div className="min-w-0 flex-1">
-          <div className="font-extrabold">{m.title}</div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="font-extrabold">{m.title}</div>
+            {fitScoreFor(m.id) !== null && (
+              <span className="flex-shrink-0 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-cinema-green/15 text-cinema-green border border-cinema-green/40">
+                {fitScoreFor(m.id)}% fit
+              </span>
+            )}
+          </div>
           <div className="flex flex-wrap gap-1 my-1">{genreNames(m.genre_ids).map((g) => <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>)}</div>
           <p
             onClick={() => setExpandedOverviews((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
