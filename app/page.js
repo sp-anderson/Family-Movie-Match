@@ -3304,7 +3304,7 @@ export default function Home() {
                       }}
                       className={
                         "w-full flex items-center justify-between text-left px-2 py-1.5 rounded-lg text-sm " +
-                        (roomMeta?.type === "family" && g.code === activeRoomCode ? "bg-cinema-gold/15 text-cinema-gold font-bold" : "text-stone-50 hover:bg-cinema-bg")
+                        (roomMeta?.type === "family" && g.code === activeRoomCode ? "bg-cinema-gold/10 text-cinema-gold font-bold" : "bg-cinema-bg text-stone-50")
                       }
                     >
                       <span>{g.nickname || g.code}</span>
@@ -3318,7 +3318,7 @@ export default function Home() {
                       }}
                       className={
                         "w-full flex items-center justify-between text-left px-2 py-1.5 rounded-lg text-sm " +
-                        (roomMeta?.type === "movie-night" ? "bg-cinema-gold/15 text-cinema-gold font-bold" : "text-stone-50 hover:bg-cinema-bg")
+                        (roomMeta?.type === "movie-night" ? "bg-cinema-gold/10 text-cinema-gold font-bold" : "bg-cinema-bg text-stone-50")
                       }
                     >
                       <span>Movie Night {profile.currentRoom}</span>
