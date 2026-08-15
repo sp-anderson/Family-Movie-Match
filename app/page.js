@@ -3337,7 +3337,7 @@ export default function Home() {
                 <div className="space-y-2 mb-3">
                   <button
                     onClick={() => { switchToOwnAccount(); }}
-                    className={"w-full flex items-center gap-2 p-2 rounded-lg border text-left " + (!activeProfileId ? "border-cinema-gold bg-cinema-gold/10" : "border-cinema-border bg-cinema-bg")}
+                    className={"w-full flex items-center gap-2 p-2 rounded-lg text-left " + (!activeProfileId ? "bg-cinema-gold/10 text-cinema-gold" : "bg-cinema-bg")}
                   >
                     <div className={`w-7 h-7 rounded-full ${avatarColor(realEmail)} flex items-center justify-center text-cinema-ink font-extrabold text-xs`}>
                       {(session?.user?.name || realEmail || "?")[0]?.toUpperCase()}
@@ -3350,7 +3350,7 @@ export default function Home() {
                     <button
                       key={p.id}
                       onClick={() => switchToProfile(p.id, p.name)}
-                      className={"w-full flex items-center gap-2 p-2 rounded-lg border text-left " + (activeProfileId === p.id ? "border-cinema-gold bg-cinema-gold/10" : "border-cinema-border bg-cinema-bg")}
+                      className={"w-full flex items-center gap-2 p-2 rounded-lg text-left " + (activeProfileId === p.id ? "bg-cinema-gold/10 text-cinema-gold" : "bg-cinema-bg")}
                     >
                       <div className={`w-7 h-7 rounded-full ${avatarColor(p.id)} flex items-center justify-center text-cinema-ink font-extrabold text-xs`}>
                         {p.name?.[0]?.toUpperCase()}
@@ -3366,7 +3366,7 @@ export default function Home() {
                       <button
                         key={m.email}
                         onClick={() => { switchToProfile(m.email, m.name); }}
-                        className={"w-full flex items-center gap-2 p-2 rounded-lg border text-left " + (activeProfileId === m.email ? "border-cinema-gold bg-cinema-gold/10" : "border-cinema-border bg-cinema-bg")}
+                        className={"w-full flex items-center gap-2 p-2 rounded-lg text-left " + (activeProfileId === m.email ? "bg-cinema-gold/10 text-cinema-gold" : "bg-cinema-bg")}
                       >
                         <div className={`w-7 h-7 rounded-full ${avatarColor(m.email)} flex items-center justify-center text-cinema-ink font-extrabold text-xs`}>
                           {m.name?.[0]?.toUpperCase()}
