@@ -2969,6 +2969,7 @@ export default function Home() {
           <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
           <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
           <TrailerButton movieId={m.id} />
+          <VoteSwitcher current="yes" onSet={(choice) => castVoteWithPrompt(m, choice)} />
         </div>
       </div>
     );
