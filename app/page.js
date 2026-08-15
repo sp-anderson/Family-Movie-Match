@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
-import { Heart, X, Users, Settings, Play, Sparkles, Film, LogOut, RefreshCw, Star, Ticket, Eye, Clock, Compass, RotateCcw, ShoppingCart, Search, Pencil, ChevronDown, Check } from "lucide-react";
+import { Heart, X, Users, Settings, Play, Sparkles, Film, LogOut, RefreshCw, Star, Ticket, Eye, Clock, Compass, RotateCcw, ShoppingCart, Search, Pencil, ChevronDown, Check, Info } from "lucide-react";
 import { computeTasteProfileFor as computeTasteProfileForShared, scoreMovieByProfile as scoreMovieByProfileShared, computePercentileMap } from "../lib/scoring";
 
 const SERVICES = [
@@ -1066,6 +1066,7 @@ export default function Home() {
   const [activeProfileName, setActiveProfileName] = useState(null);
   const [myManagedLocalProfiles, setMyManagedLocalProfiles] = useState([]); // loaded from the REAL account, independent of whichever profile is currently active — this is what makes local profiles findable across devices
   const [showProfileSwitcher, setShowProfileSwitcher] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
   const [showCreateLocalProfile, setShowCreateLocalProfile] = useState(false);
   const [newLocalProfileName, setNewLocalProfileName] = useState("");
   const [newLocalProfileDobMonth, setNewLocalProfileDobMonth] = useState("");
@@ -2811,6 +2812,13 @@ export default function Home() {
     return movieId in myFitScores ? myFitScores[movieId] : null;
   }
 
+  // below this, the fit badge is hidden on Yes and Solo Watch — those are
+  // already-decided lists, so a low score just second-guesses a choice
+  // someone already made, with no action it enables. Review Later doesn't
+  // use this: that list is explicitly undecided, so a low score there is
+  // genuinely useful ("you've been sitting on this, maybe just say no").
+  const FIT_BADGE_MIN = 70;
+
   function toggleMatchWith(otherEmail) {
     const base = matchWith === null ? otherMembers.map((m) => m.email) : matchWith;
     setMatchWith(base.includes(otherEmail) ? base.filter((e) => e !== otherEmail) : [...base, otherEmail]);
@@ -2973,7 +2981,7 @@ export default function Home() {
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
             <div className="font-extrabold">{m.title}</div>
-            {fitScoreFor(m.id) !== null && (
+            {fitScoreFor(m.id) !== null && fitScoreFor(m.id) >= FIT_BADGE_MIN && (
               <span className="flex-shrink-0 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-cinema-green/15 text-cinema-green border border-cinema-green/40">
                 {fitScoreFor(m.id)}% fit
               </span>
@@ -3275,7 +3283,56 @@ export default function Home() {
 
             {!showCreateLocalProfile ? (
               <>
-                <div className="text-[10px] font-bold text-cinema-muted uppercase tracking-wide mb-1">Who's swiping</div>
+                <div className="text-[10px] font-bold text-cinema-muted uppercase tracking-wide mb-1">Family / Movie Night</div>
+                <button
+                  onClick={() => { setShowProfileSwitcher(false); setShowNightPanel(true); }}
+                  className="w-full flex items-center gap-2.5 p-3 rounded-lg border border-cinema-gold bg-cinema-gold/10 hover:bg-cinema-gold/20 text-left mb-2"
+                >
+                  <Film className="w-5 h-5 text-cinema-gold flex-shrink-0" />
+                  <div>
+                    <div className="text-sm font-bold text-cinema-gold">Start or join a Movie Night</div>
+                    <div className="text-[11px] text-cinema-gold/80">Quick match with anyone — no family needed</div>
+                  </div>
+                </button>
+                <div className="space-y-2 mb-1">
+                  {(profile?.groups?.length ? profile.groups : profile?.group ? [{ code: profile.group, nickname: profile.group }] : []).map((g) => (
+                    <button
+                      key={g.code}
+                      onClick={() => {
+                        if (!(roomMeta?.type === "family" && g.code === activeRoomCode)) switchFamily(g.code);
+                      }}
+                      className={
+                        "w-full flex items-center justify-between text-left px-2 py-1.5 rounded-lg text-sm " +
+                        (roomMeta?.type === "family" && g.code === activeRoomCode ? "bg-cinema-gold/15 text-cinema-gold font-bold" : "text-stone-50 hover:bg-cinema-bg")
+                      }
+                    >
+                      <span>{g.nickname || g.code}</span>
+                      {roomMeta?.type === "family" && g.code === activeRoomCode && <span className="text-[10px]">Current</span>}
+                    </button>
+                  ))}
+                  {profile?.currentRoom && (
+                    <button
+                      onClick={() => {
+                        if (roomMeta?.type !== "movie-night") switchToActiveMovieNight();
+                      }}
+                      className={
+                        "w-full flex items-center justify-between text-left px-2 py-1.5 rounded-lg text-sm " +
+                        (roomMeta?.type === "movie-night" ? "bg-cinema-gold/15 text-cinema-gold font-bold" : "text-stone-50 hover:bg-cinema-bg")
+                      }
+                    >
+                      <span>Movie Night {profile.currentRoom}</span>
+                      {roomMeta?.type === "movie-night" && <span className="text-[10px]">Current</span>}
+                    </button>
+                  )}
+                </div>
+                <button
+                  onClick={() => { setShowProfileSwitcher(false); setScreen("group"); setShowJoinAnother(true); }}
+                  className="text-xs font-bold text-cinema-gold hover:underline block mb-1"
+                >
+                  + Join / start another family
+                </button>
+
+                <div className="text-[10px] font-bold text-cinema-muted uppercase tracking-wide mt-4 mb-1 pt-3 border-t border-cinema-border">Who's swiping</div>
                 <div className="space-y-2 mb-3">
                   <button
                     onClick={() => { switchToOwnAccount(); }}
@@ -3325,58 +3382,15 @@ export default function Home() {
                   </button>
                 )}
 
-                <div className="text-[10px] font-bold text-cinema-muted uppercase tracking-wide mt-4 mb-1 pt-3 border-t border-cinema-border">Family / Movie Night</div>
                 <button
-                  onClick={() => { setShowProfileSwitcher(false); setShowNightPanel(true); }}
-                  className="w-full flex items-center gap-2.5 p-3 rounded-lg border border-cinema-gold bg-cinema-gold/10 hover:bg-cinema-gold/20 text-left mb-2"
+                  onClick={() => { setShowProfileSwitcher(false); setShowAbout(true); }}
+                  className="w-full flex items-center gap-2 text-left px-2 py-2 rounded-lg text-sm text-cinema-mutedLight hover:bg-cinema-bg mt-4 pt-3 border-t border-cinema-border"
                 >
-                  <Film className="w-5 h-5 text-cinema-gold flex-shrink-0" />
-                  <div>
-                    <div className="text-sm font-bold text-cinema-gold">Start or join a Movie Night</div>
-                    <div className="text-[11px] text-cinema-gold/80">Quick match with anyone — no family needed</div>
-                  </div>
+                  <Info className="w-4 h-4" /> About
                 </button>
-                <div className="space-y-2 mb-1">
-                  {(profile?.groups?.length ? profile.groups : profile?.group ? [{ code: profile.group, nickname: profile.group }] : []).map((g) => (
-                    <button
-                      key={g.code}
-                      onClick={() => {
-                        if (!(roomMeta?.type === "family" && g.code === activeRoomCode)) switchFamily(g.code);
-                      }}
-                      className={
-                        "w-full flex items-center justify-between text-left px-2 py-1.5 rounded-lg text-sm " +
-                        (roomMeta?.type === "family" && g.code === activeRoomCode ? "bg-cinema-gold/15 text-cinema-gold font-bold" : "text-stone-50 hover:bg-cinema-bg")
-                      }
-                    >
-                      <span>{g.nickname || g.code}</span>
-                      {roomMeta?.type === "family" && g.code === activeRoomCode && <span className="text-[10px]">Current</span>}
-                    </button>
-                  ))}
-                  {profile?.currentRoom && (
-                    <button
-                      onClick={() => {
-                        if (roomMeta?.type !== "movie-night") switchToActiveMovieNight();
-                      }}
-                      className={
-                        "w-full flex items-center justify-between text-left px-2 py-1.5 rounded-lg text-sm " +
-                        (roomMeta?.type === "movie-night" ? "bg-cinema-gold/15 text-cinema-gold font-bold" : "text-stone-50 hover:bg-cinema-bg")
-                      }
-                    >
-                      <span>Movie Night {profile.currentRoom}</span>
-                      {roomMeta?.type === "movie-night" && <span className="text-[10px]">Current</span>}
-                    </button>
-                  )}
-                </div>
-                <button
-                  onClick={() => { setShowProfileSwitcher(false); setScreen("group"); setShowJoinAnother(true); }}
-                  className="text-xs font-bold text-cinema-gold hover:underline block mb-1"
-                >
-                  + Join / start another family
-                </button>
-
                 <button
                   onClick={() => signOut()}
-                  className="w-full flex items-center gap-2 text-left px-2 py-2 rounded-lg text-sm text-cinema-mutedLight hover:bg-cinema-bg mt-4 pt-3 border-t border-cinema-border"
+                  className="w-full flex items-center gap-2 text-left px-2 py-2 rounded-lg text-sm text-cinema-mutedLight hover:bg-cinema-bg"
                 >
                   <LogOut className="w-4 h-4" /> Sign out
                 </button>
@@ -3458,6 +3472,27 @@ export default function Home() {
                 Cancel
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {showAbout && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60" onClick={() => setShowAbout(false)}>
+          <div
+            className="w-full sm:max-w-sm bg-cinema-panel border-t sm:border border-cinema-border rounded-t-2xl sm:rounded-2xl p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-extrabold text-cinema-bronze">About</h2>
+              <button onClick={() => setShowAbout(false)} className="text-cinema-mutedDark hover:text-stone-50" aria-label="Close">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex items-center gap-3 mb-2">
+              <img src="/tmdb-logo.svg" alt="TMDB" className="h-5 w-auto" />
+            </div>
+            <p className="text-xs text-cinema-mutedLight">
+              This product uses the TMDB API but is not endorsed or certified by TMDB.
+            </p>
           </div>
         </div>
       )}
@@ -4538,7 +4573,7 @@ export default function Home() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-2">
                           <div className="font-extrabold">{m.title}</div>
-                          {fitScoreFor(m.id) !== null && (
+                          {fitScoreFor(m.id) !== null && fitScoreFor(m.id) >= FIT_BADGE_MIN && (
                             <span className="flex-shrink-0 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-cinema-green/15 text-cinema-green border border-cinema-green/40">
                               {fitScoreFor(m.id)}% fit
                             </span>

@@ -10,9 +10,16 @@ export async function GET(request) {
   if (!movieId) return NextResponse.json({ error: "movieId required" }, { status: 400 });
 
   // this data (cast, crew, keywords, certification, runtime) is the same
-  // for every user and every family — cache it once, shared, forever, so
-  // repeated lookups across the whole app never hit TMDB again for a
-  // movie someone's already fetched credits for
+  // for every user and every family — cache it once, shared, so repeated
+  // lookups across the whole app don't hit TMDB again for a movie someone's
+  // already fetched credits for. TMDB's API terms prohibit caching their
+  // data for longer than 6 months, so this expires slightly under that
+  // (175 days, not the full 182) as a safety margin — a stale/expired
+  // entry looks identical to a cache miss to the code below, so it just
+  // gets refetched naturally the next time anyone requests it. This also
+  // means the app's data quietly stays more accurate over time, not just
+  // compliant, since TMDB's own data does get corrected/updated.
+  const CACHE_TTL_SECONDS = 175 * 24 * 60 * 60;
   // bump this whenever the shape of what we fetch/cache changes, so old
   // entries written before a field existed (e.g. keywords) get refreshed
   // instead of silently staying incomplete forever
@@ -65,8 +72,8 @@ export async function GET(request) {
   // "unrated" forever for something that'll get a real rating soon.
   const releaseDate = data.release_date ? new Date(data.release_date) : null;
   const isRecentRelease = releaseDate && Date.now() - releaseDate.getTime() < 1000 * 60 * 60 * 24 * 180;
-  const safeToCachePermanently = data.id && !(isRecentRelease && !certification);
-  if (safeToCachePermanently) await kv.set(cacheKey, result);
+  const safeToCache = data.id && !(isRecentRelease && !certification);
+  if (safeToCache) await kv.set(cacheKey, result, { ex: CACHE_TTL_SECONDS });
 
   return NextResponse.json(result);
 }
