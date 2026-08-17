@@ -436,7 +436,7 @@ function SpotlightControl({ movieId, spotlight, myEmail, onToggle, hideLabel }) 
     <div className="mt-1">
       {!hideLabel && recommenders.length > 0 && (
         <div className="text-[11px] text-cinema-gold font-bold mb-1">
-          📢 Recommended by {recommenders.map((r) => r.byName).join(", ")}
+          Recommended by {recommenders.map((r) => r.byName).join(", ")}
         </div>
       )}
       <button
@@ -446,7 +446,7 @@ function SpotlightControl({ movieId, spotlight, myEmail, onToggle, hideLabel }) 
           (mine ? "bg-cinema-gold text-cinema-ink border-cinema-gold" : "bg-transparent text-cinema-muted border-cinema-border hover:border-cinema-gold")
         }
       >
-        {mine ? "✓ Recommended to family" : "Recommend to family"}
+        {mine ? "Recommended to family" : "Recommend to family"}
       </button>
     </div>
   );
@@ -780,23 +780,32 @@ export default function Home() {
   }
 
   async function ensureMovieInPool(movie) {
-    if (!pool || !movie?.id) return;
-    if (pool.movies.some((m) => m.id === movie.id)) return; // already there
-    // manually-searched movies otherwise never show up in My Movies — every
-    // list there filters from the shared pool, so a vote with nothing
-    // backing it in the pool is invisible even though it saved correctly
-    const newPool = { ...pool, movies: [...pool.movies, movie] };
-    setPool(newPool);
-    try {
-      await fetch("/api/group", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: activeRoomCode, type: "pool", payload: newPool }),
-      });
-    } catch {
-      // local state already has it — worst case this doesn't persist to
-      // the shared pool and needs re-adding, not a broken vote
-    }
+    if (!movie?.id) return;
+    const groups = profile?.groups?.length ? profile.groups : profile?.group ? [{ code: profile.group }] : [];
+    if (!groups.length) return;
+
+    await Promise.all(
+      groups.map(async (g) => {
+        try {
+          // the active family's pool is already in local state — reuse it
+          // rather than re-fetching; every other family needs its own fetch,
+          // since only the currently active pool is loaded client-side
+          const currentPool = g.code === activeRoomCode ? pool : (await fetch(`/api/group?code=${encodeURIComponent(g.code)}`).then((r) => r.json())).pool;
+          if (!currentPool || currentPool.movies.some((m) => m.id === movie.id)) return; // no pool yet, or already there
+          const newPool = { ...currentPool, movies: [...currentPool.movies, movie] };
+          if (g.code === activeRoomCode) setPool(newPool);
+          await fetch("/api/group", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code: g.code, type: "pool", payload: newPool }),
+          });
+        } catch {
+          // one family's pool failing to update shouldn't block the others —
+          // worst case that specific family needs the movie re-added later,
+          // the vote itself is untouched either way
+        }
+      })
+    );
   }
 
   async function saveManualRating(rating) {
@@ -3700,7 +3709,7 @@ export default function Home() {
                   onClick={copyNightCode}
                   className="flex-shrink-0 text-xs font-bold px-3 py-2 rounded-lg bg-cinema-panel border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold"
                 >
-                  {nightCopied === "code" ? "✓ Copied" : "Copy"}
+                  {nightCopied === "code" ? "Copied" : "Copy"}
                 </button>
               </div>
               <div className="text-xs text-cinema-muted mb-3">
@@ -3710,7 +3719,7 @@ export default function Home() {
               </div>
               <div className="flex flex-wrap gap-2 mb-2">
                 <button onClick={shareNight} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-mutedLight hover:border-cinema-gold">
-                  {nightCopied === "message" ? "✓ Copied to clipboard" : "📤 Share"}
+                  {nightCopied === "message" ? "Copied to clipboard" : "Share"}
                 </button>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -4029,7 +4038,7 @@ export default function Home() {
                         active={roleInput === "parent"}
                         onClick={() => !roleLockedForMe && setRoleInput("parent")}
                       >
-                        Parent{roleLockedForMe ? " 🔒" : ""}
+                        Parent{roleLockedForMe ? " (locked)" : ""}
                       </Chip>
                       <Chip active={roleInput === "child"} onClick={() => setRoleInput("child")}>Child</Chip>
                     </div>
