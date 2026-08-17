@@ -709,6 +709,7 @@ export default function Home() {
   const [manualQuery, setManualQuery] = useState("");
   const [manualResults, setManualResults] = useState([]);
   const [manualSearching, setManualSearching] = useState(false);
+  const [manualHasSearched, setManualHasSearched] = useState(false); // distinguishes "haven't searched yet" from "searched, got zero results"
   const [manualSelected, setManualSelected] = useState(null);
   const [manualSaved, setManualSaved] = useState(false);
   const [manualSavedLabel, setManualSavedLabel] = useState("");
@@ -720,6 +721,7 @@ export default function Home() {
     setManualSelected(null);
     setManualSaved(false);
     setManualDidYouMean(false);
+    setManualHasSearched(true);
     const trySearch = async (q) => {
       const res = await fetch(`/api/search?query=${encodeURIComponent(q)}`);
       const data = await res.json();
@@ -821,6 +823,7 @@ export default function Home() {
     setManualSelected(null);
     setManualSaved(false);
     setManualDidYouMean(false);
+    setManualHasSearched(false);
   }
 
   async function requestAccountDeletion() {
@@ -3169,7 +3172,7 @@ export default function Home() {
                 <div className="flex gap-2 mb-3">
                   <input
                     value={manualQuery}
-                    onChange={(e) => setManualQuery(e.target.value)}
+                    onChange={(e) => { setManualQuery(e.target.value); setManualHasSearched(false); }}
                     onKeyDown={(e) => e.key === "Enter" && runManualSearch()}
                     placeholder="Search by title…"
                     autoFocus
@@ -3200,7 +3203,7 @@ export default function Home() {
                       </div>
                     </button>
                   ))}
-                  {!manualSearching && manualQuery && manualResults.length === 0 && (
+                  {!manualSearching && manualHasSearched && manualResults.length === 0 && (
                     <p className="text-sm text-cinema-mutedDark text-center py-4">No results for "{manualQuery}"</p>
                   )}
                 </div>
