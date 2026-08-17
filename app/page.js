@@ -766,8 +766,40 @@ export default function Home() {
     setManualSearching(false);
   }
 
+  async function selectManualResult(searchResult) {
+    setManualSelected(searchResult); // show something immediately, upgrade once the full details land
+    try {
+      const res = await fetch(`/api/movie?movieId=${searchResult.id}`);
+      const full = await res.json();
+      if (full.id) setManualSelected(full);
+    } catch {
+      // keep the trimmed search-result shape — worse detail view, but still functional
+    }
+  }
+
+  async function ensureMovieInPool(movie) {
+    if (!pool || !movie?.id) return;
+    if (pool.movies.some((m) => m.id === movie.id)) return; // already there
+    // manually-searched movies otherwise never show up in My Movies — every
+    // list there filters from the shared pool, so a vote with nothing
+    // backing it in the pool is invisible even though it saved correctly
+    const newPool = { ...pool, movies: [...pool.movies, movie] };
+    setPool(newPool);
+    try {
+      await fetch("/api/group", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: activeRoomCode, type: "pool", payload: newPool }),
+      });
+    } catch {
+      // local state already has it — worst case this doesn't persist to
+      // the shared pool and needs re-adding, not a broken vote
+    }
+  }
+
   async function saveManualRating(rating) {
     if (!manualSelected) return;
+    await ensureMovieInPool(manualSelected);
     await castVote(manualSelected.id, "seen");
     await saveRating(manualSelected, rating);
     setManualSavedLabel("Saved to your Seen list");
@@ -776,6 +808,7 @@ export default function Home() {
 
   async function saveManualVote(choice) {
     if (!manualSelected) return;
+    await ensureMovieInPool(manualSelected);
     await castVote(manualSelected.id, choice);
     setManualSavedLabel(choice === "yes" ? "Added to your Yes list" : "Marked as no");
     setManualSaved(true);
@@ -3153,7 +3186,7 @@ export default function Home() {
                   {manualResults.map((m) => (
                     <button
                       key={m.id}
-                      onClick={() => setManualSelected(m)}
+                      onClick={() => selectManualResult(m)}
                       className="w-full flex items-center gap-3 p-2 rounded-lg bg-cinema-bg border border-cinema-border hover:border-cinema-gold text-left"
                     >
                       {m.poster_path ? (
@@ -3176,19 +3209,44 @@ export default function Home() {
 
             {manualSelected && !manualSaved && (
               <div>
-                <div className="flex items-center gap-3 mb-4">
+                <div className="flex gap-3 mb-3">
                   {manualSelected.poster_path ? (
-                    <img src={`https://image.tmdb.org/t/p/w92${manualSelected.poster_path}`} alt={manualSelected.title} className="w-14 h-20 object-cover rounded flex-shrink-0" />
+                    <img src={`https://image.tmdb.org/t/p/w200${manualSelected.poster_path}`} alt={manualSelected.title} className="w-20 h-28 object-cover rounded-lg flex-shrink-0" />
                   ) : (
-                    <div className="w-14 h-20 bg-cinema-border rounded flex-shrink-0" />
+                    <div className="w-20 h-28 bg-cinema-border rounded-lg flex-shrink-0" />
                   )}
-                  <div className="min-w-0">
-                    <div className="font-extrabold truncate">{manualSelected.title}</div>
-                    {manualSelected.year && <div className="text-xs text-cinema-mutedDark">{manualSelected.year}</div>}
+                  <div className="min-w-0 flex-1">
+                    <div className="font-extrabold">{manualSelected.title}</div>
+                    {manualSelected.genre_ids?.length > 0 && (
+                      <div className="flex flex-wrap gap-1 my-1">
+                        {genreNames(manualSelected.genre_ids).map((g) => (
+                          <span key={g} className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-border text-cinema-mutedLight font-bold">{g}</span>
+                        ))}
+                      </div>
+                    )}
+                    <DetailsRow movie={manualSelected} certifications={certifications} setCertifications={setCertifications} />
                   </div>
                 </div>
+                {manualSelected.overview && (
+                  <p
+                    onClick={() => setExpandedOverviews((prev) => ({ ...prev, [manualSelected.id]: !prev[manualSelected.id] }))}
+                    className={"text-xs text-cinema-muted cursor-pointer mb-1 " + (expandedOverviews[manualSelected.id] ? "" : "line-clamp-2")}
+                  >
+                    {manualSelected.overview}
+                  </p>
+                )}
+                {manualSelected.overview && (
+                  <button
+                    onClick={() => setExpandedOverviews((prev) => ({ ...prev, [manualSelected.id]: !prev[manualSelected.id] }))}
+                    className="text-[10px] font-bold text-cinema-gold hover:underline mb-2"
+                  >
+                    {expandedOverviews[manualSelected.id] ? "Show less" : "Read more"}
+                  </button>
+                )}
+                <ProviderRow movieId={manualSelected.id} region={profile?.region} inTheaters={manualSelected._inTheaters} />
+                <TrailerButton movieId={manualSelected.id} />
 
-                <p className="text-xs text-cinema-muted mb-2">Want to watch this?</p>
+                <p className="text-xs text-cinema-muted mb-2 mt-3">Want to watch this?</p>
                 <div className="flex gap-2 mb-4">
                   <button onClick={() => saveManualVote("no")} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-cinema-bg border border-cinema-border text-cinema-orangeLight text-sm font-bold hover:border-cinema-orange">
                     <X className="w-4 h-4" /> No
