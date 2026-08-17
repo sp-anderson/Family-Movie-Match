@@ -1073,6 +1073,7 @@ export default function Home() {
   }, [regionInput]);
 
   const [wantsTheatersInput, setWantsTheatersInput] = useState(false);
+  const [wantsRentBuyInput, setWantsRentBuyInput] = useState(false);
   const [roleInput, setRoleInput] = useState("child");
   const [matchWith, setMatchWith] = useState(null); // null = everyone in the family
   const [celebration, setCelebration] = useState(null); // the movie that just became a full match
@@ -1244,6 +1245,7 @@ export default function Home() {
         .then((d) => setMyMovieCache(d.cache || {}))
         .catch(() => setMyMovieCache({}));
       setWantsTheatersInput(data.profile.wantsTheaters || false);
+      setWantsRentBuyInput(data.profile.wantsRentBuy || false);
       setServicesInput(data.profile.services || []);
       setGenresInput(data.profile.genres || []);
       setExcludedGenresInput(data.profile.excludedGenres || []);
@@ -2002,10 +2004,10 @@ export default function Home() {
         setError(`You need to be ${PARENT_ROLE_MIN_AGE}+ to be set as a parent — an existing parent can promote you from the Family tab if they choose to.`);
         return;
       }
-      await saveProfile({ region: regionInput, role: finalRole, services: servicesInput, genres: genresInput, excludedGenres: excludedGenresInput, excludedKeywords: excludedKeywordsInput, allowedLanguages: allowedLanguagesInput, favorites, wantsTheaters: wantsTheatersInput });
-      await saveMember(activeRoomCode, { name: displayName, email, role: finalRole, maxRating: finalMaxRating, services: servicesInput, genres: genresInput, favorites, wantsTheaters: wantsTheatersInput });
+      await saveProfile({ region: regionInput, role: finalRole, services: servicesInput, genres: genresInput, excludedGenres: excludedGenresInput, excludedKeywords: excludedKeywordsInput, allowedLanguages: allowedLanguagesInput, favorites, wantsTheaters: wantsTheatersInput, wantsRentBuy: wantsRentBuyInput });
+      await saveMember(activeRoomCode, { name: displayName, email, role: finalRole, maxRating: finalMaxRating, services: servicesInput, genres: genresInput, favorites, wantsTheaters: wantsTheatersInput, wantsRentBuy: wantsRentBuyInput });
       setFamilyMembers((prev) => {
-        const rec = { name: displayName, email, role: finalRole, maxRating: finalMaxRating, services: servicesInput, genres: genresInput, favorites, wantsTheaters: wantsTheatersInput };
+        const rec = { name: displayName, email, role: finalRole, maxRating: finalMaxRating, services: servicesInput, genres: genresInput, favorites, wantsTheaters: wantsTheatersInput, wantsRentBuy: wantsRentBuyInput };
         const idx = prev.findIndex((m) => m.email === email);
         if (idx >= 0) {
           const copy = [...prev];
@@ -2016,7 +2018,7 @@ export default function Home() {
       });
     } else {
       // temporary Movie Night room — just this room's member record, permanent profile untouched
-      await saveMember(activeRoomCode, { name: displayName, email, services: servicesInput, genres: genresInput, favorites, wantsTheaters: wantsTheatersInput });
+      await saveMember(activeRoomCode, { name: displayName, email, services: servicesInput, genres: genresInput, favorites, wantsTheaters: wantsTheatersInput, wantsRentBuy: wantsRentBuyInput });
       await checkInstantMatches(activeRoomCode);
       await fetchPool();
     }
@@ -2034,16 +2036,20 @@ export default function Home() {
       const existingMovies = (latest.pool && latest.pool.movies) || [];
       const allServiceIds = Array.from(new Set(members.flatMap((m) => m.services || []).concat(profile.services || [])));
       const allGenreIds = Array.from(new Set(members.flatMap((m) => m.genres || []).concat(profile.genres || [])));
+      // shared pool, shared decision — if anyone in the family wants
+      // rent/buy titles considered, include them for everyone
+      const anyoneWantsRentBuy = members.some((m) => m.wantsRentBuy) || profile.wantsRentBuy;
       const sameFilters =
         latest.pool &&
         JSON.stringify([...(latest.pool.providerIds || [])].sort()) === JSON.stringify([...allServiceIds].sort()) &&
-        JSON.stringify([...(latest.pool.genreIds || [])].sort()) === JSON.stringify([...allGenreIds].sort());
+        JSON.stringify([...(latest.pool.genreIds || [])].sort()) === JSON.stringify([...allGenreIds].sort()) &&
+        !!latest.pool.includesRentBuy === !!anyoneWantsRentBuy;
       const startPage = sameFilters ? latest.pool.pagesFetched || 0 : 0;
       let fetched = [];
       let totalResults = null;
       let lastPageTried = startPage;
       for (let page = startPage + 1; page <= startPage + 5; page++) {
-        const url = `/api/movies?region=${profile.region || "CA"}&providers=${allServiceIds.join("|")}&genres=${allGenreIds.join("|")}&page=${page}`;
+        const url = `/api/movies?region=${profile.region || "CA"}&providers=${allServiceIds.join("|")}&genres=${allGenreIds.join("|")}&page=${page}&includeRentBuy=${anyoneWantsRentBuy}`;
         const res = await fetch(url);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "TMDB request failed");
@@ -2150,6 +2156,7 @@ export default function Home() {
         region: profile.region,
         providerIds: allServiceIds,
         genreIds: allGenreIds,
+        includesRentBuy: anyoneWantsRentBuy,
         movies: merged,
         pagesFetched: lastPageTried,
         totalResults,
@@ -4109,6 +4116,12 @@ export default function Home() {
                 <h4 className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Going out to the movies?</h4>
                 <Chip active={wantsTheatersInput} onClick={() => setWantsTheatersInput((v) => !v)}>
                   Include what's currently in theaters
+                </Chip>
+              </div>
+              <div className="mb-0 mt-4">
+                <h4 className="text-xs font-bold text-cinema-muted uppercase tracking-wide mb-2">Willing to pay to rent or buy?</h4>
+                <Chip active={wantsRentBuyInput} onClick={() => setWantsRentBuyInput((v) => !v)}>
+                  Include movies to rent or buy, not just what's included with your services
                 </Chip>
               </div>
             </div>
