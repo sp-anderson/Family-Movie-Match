@@ -68,6 +68,7 @@ export default function AdminPage() {
   const [familyQuery, setFamilyQuery] = useState("");
   const [userResult, setUserResult] = useState(null);
   const [familyResult, setFamilyResult] = useState(null);
+  const [backfillResults, setBackfillResults] = useState(null);
   const [viewAsResult, setViewAsResult] = useState(null);
   const [busyAction, setBusyAction] = useState(null);
   const [message, setMessage] = useState("");
@@ -90,6 +91,7 @@ export default function AdminPage() {
 
   async function lookupFamily() {
     setMessage("");
+    setBackfillResults(null);
     const res = await fetch(`/api/admin/lookup-family?code=${encodeURIComponent(familyQuery.trim())}`);
     const data = await res.json();
     setFamilyResult(data.found ? data : { found: false });
@@ -333,8 +335,26 @@ export default function AdminPage() {
             )}
 
             {familyResult.poolSummary && (
-              <div className="text-xs text-neutral-500">
+              <div className="text-xs text-neutral-500 mb-2">
                 Pool: {familyResult.poolSummary.movieCount} movies, last fetched {new Date(familyResult.poolSummary.fetchedAt).toLocaleString()}
+              </div>
+            )}
+
+            <ActionButton
+              busy={busyAction === "backfill"}
+              onClick={() =>
+                runAction("backfill", "/api/admin/backfill-movie-cache", { code: familyQuery.trim() }, (data) => setBackfillResults(data.results))
+              }
+            >
+              One-time: backfill movie cache for this family's members
+            </ActionButton>
+            {backfillResults && (
+              <div className="mt-2 text-xs text-neutral-400 space-y-1">
+                {Object.entries(backfillResults).map(([email, r]) => (
+                  <div key={email}>
+                    {email}: {r.error ? `error — ${r.error}` : `${r.added} added, ${r.unresolvable} couldn't be resolved (of ${r.totalVotedOrRated} voted/rated)`}
+                  </div>
+                ))}
               </div>
             )}
           </div>

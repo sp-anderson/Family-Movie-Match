@@ -571,6 +571,7 @@ export default function Home() {
     for (const item of migrationItems) {
       if (item.skipped || !item.candidate) continue;
       try {
+        saveMovieToCache(item.candidate);
         let credits = {};
         try {
           const dRes = await fetch(`/api/details?movieId=${item.candidate.id}`);
@@ -811,7 +812,7 @@ export default function Home() {
   async function saveManualRating(rating) {
     if (!manualSelected) return;
     await ensureMovieInPool(manualSelected);
-    await castVote(manualSelected.id, "seen");
+    await castVote(manualSelected.id, "seen", undefined, manualSelected);
     await saveRating(manualSelected, rating);
     setManualSavedLabel("Saved to your Seen list");
     setManualSaved(true);
@@ -820,7 +821,7 @@ export default function Home() {
   async function saveManualVote(choice) {
     if (!manualSelected) return;
     await ensureMovieInPool(manualSelected);
-    await castVote(manualSelected.id, choice);
+    await castVote(manualSelected.id, choice, undefined, manualSelected);
     setManualSavedLabel(choice === "yes" ? "Added to your Yes list" : "Marked as no");
     setManualSaved(true);
   }
@@ -1239,6 +1240,10 @@ export default function Home() {
         .then((r) => r.json())
         .then((d) => setDwellTimes(d.dwellTimes || {}))
         .catch(() => setDwellTimes({}));
+      fetch(`/api/movie-cache?email=${encodeURIComponent(email)}`)
+        .then((r) => r.json())
+        .then((d) => setMyMovieCache(d.cache || {}))
+        .catch(() => setMyMovieCache({}));
       setWantsTheatersInput(data.profile.wantsTheaters || false);
       setServicesInput(data.profile.services || []);
       setGenresInput(data.profile.genres || []);
@@ -2549,7 +2554,19 @@ export default function Home() {
     // eslint-disable-next-line
   }, [deck.length ? deck[0]?.id : null]);
 
-  async function castVote(movieId, choice, dwellMs) {
+  const [myMovieCache, setMyMovieCache] = useState({}); // { movieId: {title, poster_path, ...} } — personal, so My Movies never depends on a family pool to render a voted/rated movie
+  function saveMovieToCache(movie) {
+    if (!movie?.id || myMovieCache[movie.id]) return; // already have it, don't re-save on every vote change
+    setMyMovieCache((prev) => ({ ...prev, [movie.id]: movie }));
+    fetch("/api/movie-cache", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, movie }),
+    }).catch(() => {}); // local state already has it — worst case this needs re-saving later
+  }
+
+  async function castVote(movieId, choice, dwellMs, movieForCache) {
+    if (movieForCache) saveMovieToCache(movieForCache);
     const previousChoice = (votes[movieId] || {})[email] || null;
     setLastAction({ movieId, previousChoice });
     // optimistic: update locally right away so the next card appears
@@ -2652,7 +2669,7 @@ export default function Home() {
     setAnimating(true);
     setDragX(choice === "yes" ? 500 : -500);
     setTimeout(() => {
-      castVote(movie.id, choice, dwellMs);
+      castVote(movie.id, choice, dwellMs, movie);
       setDragX(0);
       setAnimating(false);
     }, 200);
@@ -2668,6 +2685,7 @@ export default function Home() {
   }
 
   async function saveRating(movie, rating) {
+    saveMovieToCache(movie);
     const movieId = movie.id;
     const genreIds = movie.genre_ids || [];
     const originalLanguage = movie.original_language || null;
@@ -2708,12 +2726,13 @@ export default function Home() {
   }
 
   function castVoteWithPrompt(movie, choice, dwellMs) {
-    castVote(movie.id, choice, dwellMs);
+    castVote(movie.id, choice, dwellMs, movie);
     if (choice === "seen") setRatingPromptMovie(movie);
   }
 
   async function skipCurrent() {
     if (!currentMovie || animating) return;
+    saveMovieToCache(currentMovie);
     const movieId = currentMovie.id;
     setSkippedMap((prev) => {
       const list = prev[email] || [];
@@ -2877,20 +2896,29 @@ export default function Home() {
     // eslint-disable-next-line
   }, [pool, votes, members, matchWith, email, myMaxRating, certifications]);
 
+  // pool movies first (freshest data when both exist), personal cache
+  // fills in anything the current pool doesn't have — this is what makes
+  // My Movies work regardless of which family's pool is currently loaded
+  const myKnownMovies = useMemo(() => {
+    const byId = new Map((pool?.movies || []).map((m) => [m.id, m]));
+    Object.values(myMovieCache).forEach((m) => { if (!byId.has(m.id)) byId.set(m.id, m); });
+    return Array.from(byId.values());
+  }, [pool, myMovieCache]);
+
   const myWatched = useMemo(() => {
-    if (!pool || !email) return [];
-    return pool.movies.filter((m) => (votes[m.id] || {})[email] === "seen");
-  }, [pool, votes, email]);
+    if (!email) return [];
+    return myKnownMovies.filter((m) => (votes[m.id] || {})[email] === "seen");
+  }, [myKnownMovies, votes, email]);
 
   const myYes = useMemo(() => {
-    if (!pool || !email) return [];
-    return pool.movies.filter((m) => (votes[m.id] || {})[email] === "yes");
-  }, [pool, votes, email]);
+    if (!email) return [];
+    return myKnownMovies.filter((m) => (votes[m.id] || {})[email] === "yes");
+  }, [myKnownMovies, votes, email]);
 
   const myNo = useMemo(() => {
-    if (!pool || !email) return [];
-    return pool.movies.filter((m) => (votes[m.id] || {})[email] === "no");
-  }, [pool, votes, email]);
+    if (!email) return [];
+    return myKnownMovies.filter((m) => (votes[m.id] || {})[email] === "no");
+  }, [myKnownMovies, votes, email]);
 
   const familyYesByMember = useMemo(() => {
     if (!pool) return [];
@@ -2952,9 +2980,7 @@ export default function Home() {
     historySort
   );
 
-  const reviewLaterMovies = pool
-    ? skippedOrder.map((id) => pool.movies.find((m) => m.id === id)).filter(Boolean).filter((m) => !(votes[m.id] || {})[email])
-    : [];
+  const reviewLaterMovies = skippedOrder.map((id) => myKnownMovies.find((m) => m.id === id)).filter(Boolean).filter((m) => !(votes[m.id] || {})[email]);
   const reviewLaterSearched = reviewLaterMovies.filter((m) => passesTitleOrCastFilter(m, historySearch));
   const visibleReviewLater = sortMovies(
     reviewLaterSearched.filter((m) => passesGenreFilter(m, historyGenreFilter) && passesAvailabilityFilter(m, historyAvailabilityFilter)),
@@ -4858,9 +4884,9 @@ export default function Home() {
                               Your vote: {myVote ? myVote : "haven't swiped yet"}
                             </div>
                             <div className="flex gap-1 mt-1">
-                              <button onClick={() => castVote(m.id, "yes")} className={"text-[11px] font-bold px-2 py-0.5 rounded-full border " + (myVote === "yes" ? "bg-cinema-green text-cinema-ink border-cinema-green" : "border-cinema-border text-cinema-muted hover:border-cinema-green hover:text-cinema-green")}>Yes</button>
-                              <button onClick={() => castVote(m.id, "no")} className={"text-[11px] font-bold px-2 py-0.5 rounded-full border " + (myVote === "no" ? "bg-cinema-orange text-cinema-ink border-cinema-orange" : "border-cinema-border text-cinema-muted hover:border-cinema-orange hover:text-cinema-orange")}>No</button>
-                              <button onClick={() => castVote(m.id, "seen")} className={"text-[11px] font-bold px-2 py-0.5 rounded-full border " + (myVote === "seen" ? "bg-cinema-gold text-cinema-ink border-cinema-gold" : "border-cinema-border text-cinema-muted hover:border-cinema-gold hover:text-cinema-gold")}>Seen</button>
+                              <button onClick={() => castVote(m.id, "yes", undefined, m)} className={"text-[11px] font-bold px-2 py-0.5 rounded-full border " + (myVote === "yes" ? "bg-cinema-green text-cinema-ink border-cinema-green" : "border-cinema-border text-cinema-muted hover:border-cinema-green hover:text-cinema-green")}>Yes</button>
+                              <button onClick={() => castVote(m.id, "no", undefined, m)} className={"text-[11px] font-bold px-2 py-0.5 rounded-full border " + (myVote === "no" ? "bg-cinema-orange text-cinema-ink border-cinema-orange" : "border-cinema-border text-cinema-muted hover:border-cinema-orange hover:text-cinema-orange")}>No</button>
+                              <button onClick={() => castVote(m.id, "seen", undefined, m)} className={"text-[11px] font-bold px-2 py-0.5 rounded-full border " + (myVote === "seen" ? "bg-cinema-gold text-cinema-ink border-cinema-gold" : "border-cinema-border text-cinema-muted hover:border-cinema-gold hover:text-cinema-gold")}>Seen</button>
                             </div>
                           </div>
                         </div>
@@ -4912,9 +4938,9 @@ export default function Home() {
                             Your vote: {myVote ? myVote : "haven't swiped yet"}
                           </div>
                           <div className="flex gap-1 mt-1">
-                            <button onClick={() => castVote(m.id, "yes")} className={"text-[11px] font-bold px-2 py-0.5 rounded-full border " + (myVote === "yes" ? "bg-cinema-green text-cinema-ink border-cinema-green" : "border-cinema-border text-cinema-muted hover:border-cinema-green hover:text-cinema-green")}>Yes</button>
-                            <button onClick={() => castVote(m.id, "no")} className={"text-[11px] font-bold px-2 py-0.5 rounded-full border " + (myVote === "no" ? "bg-cinema-orange text-cinema-ink border-cinema-orange" : "border-cinema-border text-cinema-muted hover:border-cinema-orange hover:text-cinema-orange")}>No</button>
-                            <button onClick={() => castVote(m.id, "seen")} className={"text-[11px] font-bold px-2 py-0.5 rounded-full border " + (myVote === "seen" ? "bg-cinema-gold text-cinema-ink border-cinema-gold" : "border-cinema-border text-cinema-muted hover:border-cinema-gold hover:text-cinema-gold")}>Seen</button>
+                            <button onClick={() => castVote(m.id, "yes", undefined, m)} className={"text-[11px] font-bold px-2 py-0.5 rounded-full border " + (myVote === "yes" ? "bg-cinema-green text-cinema-ink border-cinema-green" : "border-cinema-border text-cinema-muted hover:border-cinema-green hover:text-cinema-green")}>Yes</button>
+                            <button onClick={() => castVote(m.id, "no", undefined, m)} className={"text-[11px] font-bold px-2 py-0.5 rounded-full border " + (myVote === "no" ? "bg-cinema-orange text-cinema-ink border-cinema-orange" : "border-cinema-border text-cinema-muted hover:border-cinema-orange hover:text-cinema-orange")}>No</button>
+                            <button onClick={() => castVote(m.id, "seen", undefined, m)} className={"text-[11px] font-bold px-2 py-0.5 rounded-full border " + (myVote === "seen" ? "bg-cinema-gold text-cinema-ink border-cinema-gold" : "border-cinema-border text-cinema-muted hover:border-cinema-gold hover:text-cinema-gold")}>Seen</button>
                           </div>
                         </div>
                       </div>
