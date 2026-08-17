@@ -312,9 +312,8 @@ function FilterSortBar({ sort, setSort, genreFilter, setGenreFilter, sortOptions
           onChange={(e) => setSort({ ...sort, key: e.target.value })}
           className="text-xs font-bold px-2 py-1 rounded-lg bg-cinema-panel border border-cinema-border text-stone-50"
         >
-          <option value="">Default</option>
           {sortOptions.includes("match") && <option value="match">Match %</option>}
-          {sortOptions.includes("fit") && <option value="fit">Fit %</option>}
+          {sortOptions.includes("fit") && <option value="fit">Fit</option>}
           {sortOptions.includes("year") && <option value="year">Release year</option>}
           {sortOptions.includes("score") && <option value="score">User score</option>}
           {sortOptions.includes("title") && <option value="title">Title A-Z</option>}
