@@ -255,13 +255,20 @@ function ProviderRow({ movieId, title, region, inTheaters }) {
             <div className="flex flex-wrap gap-1.5">
               {rentBuyNames.map((name) => {
                 const isAmazon = name.toLowerCase().includes("amazon");
-                // Amazon Associates tracks via the ?tag= parameter on ANY
-                // amazon.com URL, not a specific product ID — so a search
-                // link still earns commission correctly, even without a
-                // true per-title deep link (which nobody's given us yet)
-                const href = isAmazon
-                  ? `https://www.amazon.com/s?k=${encodeURIComponent(title || "")}&i=instant-video&tag=familymovi093-20`
-                  : data.link;
+                // Confirmed directly with Amazon Associates support: this
+                // tag is tied to its home program (amazon.ca) and does not
+                // extend to other country programs — each requires its own
+                // separate registration and its own tag. Add an entry here
+                // for each additional country once/if that's set up;
+                // anything not listed correctly falls back to the generic
+                // shared link rather than pointing at an uncredited domain.
+                const amazonAssociateTags = { CA: "familymovi093-20", US: "familymovie09-20", GB: "familymoviema-21" };
+                const amazonDomains = { CA: "amazon.ca", US: "amazon.com", GB: "amazon.co.uk" };
+                const amazonTag = amazonAssociateTags[region];
+                const href =
+                  isAmazon && amazonTag
+                    ? `https://www.${amazonDomains[region]}/s?k=${encodeURIComponent(title || "")}&i=instant-video&tag=${amazonTag}`
+                    : data.link;
                 return (
                   <a
                     key={name}
