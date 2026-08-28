@@ -2034,7 +2034,10 @@ export default function Home() {
         return [...prev, rec];
       });
     } else {
-      // temporary Movie Night room — just this room's member record, permanent profile untouched
+      // temporary Movie Night room — genres/services/favorites stay
+      // room-specific, but region/theaters/rent-buy describe the actual
+      // person, not the room, so those always update the real profile too
+      await saveProfile({ region: regionInput, wantsTheaters: wantsTheatersInput, wantsRentBuy: wantsRentBuyInput });
       await saveMember(activeRoomCode, { name: displayName, email, services: servicesInput, genres: genresInput, favorites, wantsTheaters: wantsTheatersInput, wantsRentBuy: wantsRentBuyInput });
       await checkInstantMatches(activeRoomCode);
       await fetchPool();
