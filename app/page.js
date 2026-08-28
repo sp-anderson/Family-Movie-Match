@@ -224,7 +224,7 @@ function Chip({ active, onClick, children, variant = "gold" }) {
   );
 }
 
-function ProviderRow({ movieId, region, inTheaters }) {
+function ProviderRow({ movieId, title, region, inTheaters }) {
   const [data, setData] = useState(null);
   useEffect(() => {
     let cancelled = false;
@@ -253,17 +253,27 @@ function ProviderRow({ movieId, region, inTheaters }) {
               <span className="text-[11px] font-bold text-cinema-gold">Rent or buy elsewhere</span>
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {rentBuyNames.map((name) => (
-                <a
-                  key={name}
-                  href={data.link}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[11px] px-2.5 py-1 rounded-full border border-cinema-gold text-cinema-gold hover:bg-cinema-gold/20"
-                >
-                  {name}
-                </a>
-              ))}
+              {rentBuyNames.map((name) => {
+                const isAmazon = name.toLowerCase().includes("amazon");
+                // Amazon Associates tracks via the ?tag= parameter on ANY
+                // amazon.com URL, not a specific product ID — so a search
+                // link still earns commission correctly, even without a
+                // true per-title deep link (which nobody's given us yet)
+                const href = isAmazon
+                  ? `https://www.amazon.com/s?k=${encodeURIComponent(title || "")}&i=instant-video&tag=familymovi093-20`
+                  : data.link;
+                return (
+                  <a
+                    key={name}
+                    href={href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] px-2.5 py-1 rounded-full border border-cinema-gold text-cinema-gold hover:bg-cinema-gold/20"
+                  >
+                    {name}
+                  </a>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -3044,7 +3054,7 @@ export default function Home() {
             </button>
           )}
           <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
-          <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
+          <ProviderRow movieId={m.id} title={m.title} region={profile?.region} inTheaters={m._inTheaters} />
           <TrailerButton movieId={m.id} />
           <VoteSwitcher current="yes" onSet={(choice) => castVoteWithPrompt(m, choice)} />
         </div>
@@ -3081,7 +3091,7 @@ export default function Home() {
             </button>
           )}
           <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
-          <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
+          <ProviderRow movieId={m.id} title={m.title} region={profile?.region} inTheaters={m._inTheaters} />
           <TrailerButton movieId={m.id} />
           <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
           <VoteSwitcher current="yes" onSet={(choice) => castVoteWithPrompt(m, choice)} />
@@ -3287,7 +3297,7 @@ export default function Home() {
                     {expandedOverviews[manualSelected.id] ? "Show less" : "Read more"}
                   </button>
                 )}
-                <ProviderRow movieId={manualSelected.id} region={profile?.region} inTheaters={manualSelected._inTheaters} />
+                <ProviderRow movieId={manualSelected.id} title={manualSelected.title} region={profile?.region} inTheaters={manualSelected._inTheaters} />
                 <TrailerButton movieId={manualSelected.id} />
 
                 <p className="text-xs text-cinema-muted mb-2 mt-3">Want to watch this?</p>
@@ -4704,7 +4714,7 @@ export default function Home() {
             </button>
           )}
                         <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
-                        <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
+                        <ProviderRow movieId={m.id} title={m.title} region={profile?.region} inTheaters={m._inTheaters} />
                         <TrailerButton movieId={m.id} />
                         <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                         <VoteSwitcher current="yes" onSet={(choice) => castVoteWithPrompt(m, choice)} />
@@ -4746,7 +4756,7 @@ export default function Home() {
             </button>
           )}
                         <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
-                        <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
+                        <ProviderRow movieId={m.id} title={m.title} region={profile?.region} inTheaters={m._inTheaters} />
                         <TrailerButton movieId={m.id} />
                         <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                         <RatingControl movie={m} ratings={ratings} onRate={saveRating} />
@@ -4786,7 +4796,7 @@ export default function Home() {
             </button>
           )}
                         <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
-                        <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
+                        <ProviderRow movieId={m.id} title={m.title} region={profile?.region} inTheaters={m._inTheaters} />
                         <TrailerButton movieId={m.id} />
                         <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                         <VoteSwitcher current="no" onSet={(choice) => castVoteWithPrompt(m, choice)} />
@@ -4828,7 +4838,7 @@ export default function Home() {
             </button>
           )}
                         <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
-                        <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
+                        <ProviderRow movieId={m.id} title={m.title} region={profile?.region} inTheaters={m._inTheaters} />
                         <TrailerButton movieId={m.id} />
                         <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                         <VoteSwitcher onSet={(choice) => castVoteWithPrompt(m, choice)} />
@@ -4889,7 +4899,7 @@ export default function Home() {
             </button>
           )}
                             <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
-                            <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
+                            <ProviderRow movieId={m.id} title={m.title} region={profile?.region} inTheaters={m._inTheaters} />
                             <TrailerButton movieId={m.id} />
                             <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                             <div className="text-[11px] text-cinema-muted mt-1">
@@ -4943,7 +4953,7 @@ export default function Home() {
             </button>
           )}
                           <DetailsRow movie={m} certifications={certifications} setCertifications={setCertifications} />
-                          <ProviderRow movieId={m.id} region={profile?.region} inTheaters={m._inTheaters} />
+                          <ProviderRow movieId={m.id} title={m.title} region={profile?.region} inTheaters={m._inTheaters} />
                           <TrailerButton movieId={m.id} />
                           <SpotlightControl movieId={m.id} spotlight={spotlight} myEmail={email} onToggle={toggleSpotlight} />
                           <div className="text-[11px] text-cinema-muted mt-1">
